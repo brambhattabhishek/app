@@ -1,12 +1,48 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lightbulb, Clock, Lock } from "lucide-react";
+import { Lightbulb, Clock, Lock, Building2, ChevronDown, BookOpen, AlertTriangle } from "lucide-react";
 import { api, langLabel, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { diffCls } from "@/pages/ProblemsPage";
 
 export const fmtInput = (params, input) =>
   input.split("\n").map((v, i) => `${params[i]?.name} = ${v}`).join(", ");
+
+function Hints({ hints }) {
+  const [open, setOpen] = useState({});
+  return (
+    <div className="mt-8 divide-y border-y" data-testid="hints-section">
+      {hints.map((h, i) => (
+        <div key={i}>
+          <button onClick={() => setOpen({ ...open, [i]: !open[i] })} data-testid={`hint-toggle-${i + 1}`}
+            className="w-full flex items-center justify-between py-3 text-sm font-medium hover:text-primary transition-colors">
+            <span className="flex items-center gap-2"><Lightbulb className="w-4 h-4 text-medium" />Hint {i + 1}</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${open[i] ? "rotate-180" : ""}`} />
+          </button>
+          {open[i] && <p className="pb-4 text-sm text-muted-foreground leading-6" data-testid={`hint-content-${i + 1}`}>{h}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Understand({ p }) {
+  if (!p.explanation && !p.edgeCases?.length) return null;
+  return (
+    <div className="mt-8 rounded-xl border bg-secondary/40 p-4" data-testid="understand-section">
+      <p className="flex items-center gap-2 font-semibold text-sm mb-2"><BookOpen className="w-4 h-4 text-primary" />Understand the problem</p>
+      {p.explanation && <p className="text-sm leading-6 text-muted-foreground mb-3">{p.explanation}</p>}
+      {!!p.edgeCases?.length && (
+        <>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2"><AlertTriangle className="w-3.5 h-3.5 text-hard" />Edge cases to handle</p>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground" data-testid="edge-cases-list">
+            {p.edgeCases.map((e) => <li key={e}>{e}</li>)}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
 
 function Description({ p }) {
   return (
@@ -16,6 +52,12 @@ function Description({ p }) {
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary ${diffCls[p.difficulty]}`} data-testid="problem-difficulty">{p.difficulty}</span>
         {p.tags.map((t) => <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-secondary text-muted-foreground">{t}</span>)}
       </div>
+      {!!p.companies?.length && (
+        <div className="flex flex-wrap items-center gap-2 -mt-3 mb-6" data-testid="problem-companies">
+          <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+          {p.companies.map((c) => <span key={c} className="text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary">{c}</span>)}
+        </div>
+      )}
       <div className="prose-lc text-[15px]" dangerouslySetInnerHTML={{ __html: p.description }} />
       {p.sampleTests.map((t, i) => (
         <div key={i} className="mt-5" data-testid={`example-${i + 1}`}>
@@ -30,6 +72,8 @@ function Description({ p }) {
       <ul className="list-disc pl-5 space-y-1.5">
         {p.constraints.map((c) => <li key={c}><code className="font-mono text-[12.5px] px-1.5 py-0.5 rounded bg-secondary border">{c}</code></li>)}
       </ul>
+      <Understand p={p} />
+      {!!p.hints?.length && <Hints hints={p.hints} />}
     </div>
   );
 }

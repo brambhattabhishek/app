@@ -1,11 +1,14 @@
 import os
+import platform
+import shutil
 import socket
+import threading
 import subprocess
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent / ".env", override=True)
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -26,11 +29,34 @@ def java_up() -> bool:
         return s.connect_ex(("127.0.0.1", JAVA_PORT)) == 0
 
 
+def ensure_jdk() -> str:
+    home = os.environ["JAVA_HOME_DIR"]
+    if os.path.exists(f"{home}/bin/javac"):
+        return home
+    if shutil.which("javac"):
+        return str(Path(shutil.which("javac")).resolve().parent.parent)
+    arch = "aarch64" if platform.machine() in ("aarch64", "arm64") else "x64"
+    url = f"https://api.adoptium.net/v3/binary/latest/17/ga/linux/{arch}/jdk/hotspot/normal/eclipse"
+    tmp = "/tmp/jdk17.tar.gz"
+    subprocess.run(["curl", "-sSL", "-o", tmp, url], check=True)
+    os.makedirs(home, exist_ok=True)
+    subprocess.run(["tar", "-xzf", tmp, "-C", home, "--strip-components=1"], check=True)
+    return home
+
+
+def launch_java():
+    home = ensure_jdk()
+    env = os.environ.copy()
+    env["JAVA_HOME"] = home
+    env["PATH"] = f"{home}/bin:" + env.get("PATH", "")
+    log = open("/var/log/supervisor/java-backend.log", "a")
+    subprocess.Popen([f"{home}/bin/java", "-Xmx512m", "-jar", JAVA_JAR], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+
 @app.on_event("startup")
 async def start_java():
     if not java_up():
-        log = open("/var/log/supervisor/java-backend.log", "a")
-        subprocess.Popen(["java", "-Xmx512m", "-jar", JAVA_JAR], env=os.environ.copy(), stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        threading.Thread(target=launch_java, daemon=True).start()
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

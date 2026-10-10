@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Flame, CalendarDays, Target, Send } from "lucide-react";
+import { Flame, CalendarDays, Target, Send, MapPin, Phone, KeyRound } from "lucide-react";
+import EditProfile from "@/components/EditProfile";
 import { api, langLabel, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Navbar";
@@ -69,7 +70,7 @@ const Stat = ({ icon: Icon, label, value, testid }) => (
 );
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const [d, setD] = useState(null);
   useEffect(() => { if (user) api.get("/profile").then(({ data }) => setD(data)); }, [user]);
 
@@ -84,7 +85,17 @@ export default function ProfilePage() {
           <Avatar user={d.user} size={64} />
           <div className="min-w-0"><h1 className="font-heading text-2xl font-bold truncate" data-testid="profile-name">{d.user.name}</h1><p className="text-sm text-muted-foreground truncate">{d.user.email}</p></div>
         </div>
-        <p className="text-xs text-muted-foreground">Joined {new Date(d.user.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" })} · via {d.user.provider}</p>
+        {d.user.bio && <p className="text-sm leading-6" data-testid="profile-bio">{d.user.bio}</p>}
+        <div className="space-y-1.5 text-xs text-muted-foreground" data-testid="profile-details">
+          {d.user.location && <p className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5" />{d.user.location}</p>}
+          {d.user.phone && <p className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{d.user.phone}</p>}
+          <p className="flex items-center gap-2"><KeyRound className="w-3.5 h-3.5" />Sign-in: {(d.user.providers || [d.user.provider]).join(", ")}</p>
+          <p>Joined {new Date(d.user.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" })} · {d.user.login_count || 0} logins{d.user.last_login_at ? ` · last ${new Date(d.user.last_login_at).toLocaleString()}` : ""}</p>
+        </div>
+        {!!d.user.interests?.length && (
+          <div className="flex flex-wrap gap-1.5" data-testid="profile-interests">{d.user.interests.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-secondary">{t}</span>)}</div>
+        )}
+        <EditProfile user={d.user} onSaved={(u) => { setD({ ...d, user: u }); setUser(u); }} />
         <div className="grid grid-cols-2 gap-5">
           <Stat icon={Flame} label="Day streak" value={d.streak} testid="profile-streak" />
           <Stat icon={CalendarDays} label="Active days" value={d.activeDays} testid="profile-active-days" />

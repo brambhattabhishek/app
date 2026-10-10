@@ -33,6 +33,7 @@ export default function Navbar() {
         <nav className="flex items-center gap-1">
           <NavLink to="/" end className={linkCls} data-testid="nav-problems-link">Problems</NavLink>
           {user && <NavLink to="/profile" className={linkCls} data-testid="nav-profile-link">Profile</NavLink>}
+          {user?.is_admin && <NavLink to="/admin" className={linkCls} data-testid="nav-admin-link">Admin</NavLink>}
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <button

@@ -4,6 +4,8 @@ import { CheckCircle2, CircleDashed, Search, Shuffle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import ForYou from "@/components/ForYou";
+import AdSlot from "@/components/AdSlot";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const diffCls = { Easy: "text-easy", Medium: "text-medium", Hard: "text-hard" };
@@ -29,6 +31,7 @@ export default function ProblemsPage() {
   const [diff, setDiff] = useState("all");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState(null);
+  const [company, setCompany] = useState("all");
 
   useEffect(() => {
     if (user === null) return;
@@ -36,10 +39,12 @@ export default function ProblemsPage() {
   }, [user]);
 
   const tags = useMemo(() => [...new Set(items.flatMap((p) => p.tags))].sort(), [items]);
+  const companies = useMemo(() => [...new Set(items.flatMap((p) => p.companies || []))].sort(), [items]);
   const rows = items.filter((p) =>
     (diff === "all" || p.difficulty === diff) &&
     (status === "all" || p.status === status) &&
     (!tag || p.tags.includes(tag)) &&
+    (company === "all" || (p.companies || []).includes(company)) &&
     (p.title.toLowerCase().includes(q.toLowerCase()) || String(p.id) === q.trim()));
   const count = (d, s) => items.filter((p) => p.difficulty === d && (!s || p.status === "solved")).length;
 
@@ -63,6 +68,8 @@ export default function ProblemsPage() {
         <StatCard label="Hard" solved={count("Hard", true)} total={count("Hard")} cls="text-hard" delay={180} />
       </div>
 
+      <ForYou />
+
       <div className="flex flex-wrap gap-2 mb-4">
         {tags.map((t) => (
           <button key={t} onClick={() => setTag(tag === t ? null : t)} data-testid={`filter-tag-badge-${t.toLowerCase().replace(/\s+/g, "-")}`}
@@ -84,6 +91,13 @@ export default function ProblemsPage() {
             {["all", "Easy", "Medium", "Hard"].map((d) => <SelectItem key={d} value={d} data-testid={`difficulty-option-${d}`}>{d === "all" ? "Difficulty" : d}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={company} onValueChange={setCompany}>
+          <SelectTrigger className="w-40 h-9" data-testid="filter-company-select"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Company</SelectItem>
+            {companies.map((c) => <SelectItem key={c} value={c} data-testid={`company-option-${c.toLowerCase().replace(/\s+/g, "-")}`}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-36 h-9" data-testid="filter-status-select"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -98,9 +112,12 @@ export default function ProblemsPage() {
         </div>
         {rows.map((p, i) => (
           <Link to={`/problems/${p.slug}`} key={p.slug} data-testid={`problem-row-${p.id}`}
-            className={`grid grid-cols-[48px_1fr_110px_90px] sm:grid-cols-[56px_1fr_260px_110px_90px] px-4 h-12 items-center text-sm hover:bg-accent transition-colors ${i % 2 ? "bg-secondary/40" : ""}`}>
+            className={`grid grid-cols-[48px_1fr_110px_90px] sm:grid-cols-[56px_1fr_260px_110px_90px] px-4 h-14 items-center text-sm hover:bg-accent transition-colors ${i % 2 ? "bg-secondary/40" : ""}`}>
             <span>{p.status === "solved" ? <CheckCircle2 className="w-4 h-4 text-easy" /> : p.status === "attempted" ? <CircleDashed className="w-4 h-4 text-medium" /> : null}</span>
-            <span className="font-medium truncate pr-4" data-testid={`problem-title-link-${p.id}`}>{p.id}. {p.title}</span>
+            <span className="truncate pr-4">
+              <span className="font-medium" data-testid={`problem-title-link-${p.id}`}>{p.id}. {p.title}</span>
+              {!!p.companies?.length && <span className="block text-[11px] text-muted-foreground truncate" data-testid={`problem-companies-${p.id}`}>{p.companies.join(" · ")}</span>}
+            </span>
             <span className="hidden sm:flex gap-1.5 overflow-hidden">{p.tags.slice(0, 2).map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground whitespace-nowrap">{t}</span>)}</span>
             <span className="text-muted-foreground">{p.acceptance.toFixed(1)}%</span>
             <span className={`font-semibold ${diffCls[p.difficulty]}`}>{p.difficulty === "Medium" ? "Med." : p.difficulty}</span>
@@ -108,6 +125,7 @@ export default function ProblemsPage() {
         ))}
         {!rows.length && <div className="p-10 text-center text-muted-foreground text-sm" data-testid="problems-empty">No problems match your filters.</div>}
       </div>
+      <AdSlot id="problems-bottom" className="mt-8" />
     </main>
   );
 }
