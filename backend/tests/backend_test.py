@@ -234,3 +234,189 @@ class TestRunSubmit:
                       json={"slug": "two-sum", "language": "python", "code": "x=1"},
                       timeout=30)
         assert r.status_code in (401, 403)
+
+
+# ---------- Iteration 4: Profile avatar + socials/about ----------
+def _tiny_png_bytes():
+    import struct, zlib
+    sig = b'\x89PNG\r\n\x1a\n'
+    ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+    def ch(t, d):
+        return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    idat = zlib.compress(b'\x00\xff\x00\x00')
+    return sig + ch(b'IHDR', ihdr) + ch(b'IDAT', idat) + ch(b'IEND', b'')
+
+
+class TestProfileAvatarSocials:
+    def test_avatar_upload_get_remove(self, http, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        files = {"file": ("a.png", _tiny_png_bytes(), "image/png")}
+        r = requests.post(f"{BASE_URL}/api/profile/avatar", headers=headers, files=files, timeout=TIMEOUT)
+        assert r.status_code == 200, r.text
+        pic = r.json().get("picture")
+        assert pic and pic.startswith("/api/avatars/")
+        file_id = pic.split("/")[-1]
+        # GET the image
+        g = requests.get(f"{BASE_URL}/api/avatars/{file_id}", timeout=TIMEOUT)
+        assert g.status_code == 200
+        assert "image/" in g.headers.get("content-type", "")
+        # Remove
+        rem = http.delete(f"{BASE_URL}/api/profile/avatar", headers=headers, timeout=TIMEOUT)
+        assert rem.status_code == 200
+        assert rem.json().get("picture") in (None, "")
+
+    def test_avatar_rejects_non_image(self, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        files = {"file": ("a.txt", b"hello", "text/plain")}
+        r = requests.post(f"{BASE_URL}/api/profile/avatar", headers=headers, files=files, timeout=TIMEOUT)
+        assert r.status_code == 400
+
+    def test_avatar_rejects_too_large(self, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        big = b"\x89PNG\r\n\x1a\n" + b"0" * (3 * 1024 * 1024 + 100)
+        files = {"file": ("big.png", big, "image/png")}
+        r = requests.post(f"{BASE_URL}/api/profile/avatar", headers=headers, files=files, timeout=TIMEOUT)
+        assert r.status_code in (400, 413)  # 413 from Spring's multipart limit, 400 from our check
+
+    def test_socials_about_reminder_persist(self, http, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        payload = {
+            "about": "Pytest about text",
+            "daily_reminder": True,
+            "socials": {
+                "github": "https://github.com/pytestuser",
+                "linkedin": "https://www.linkedin.com/in/pytest",
+                "twitter": "https://x.com/pytest",
+                "website": "https://example.com",
+            },
+        }
+        r = http.put(f"{BASE_URL}/api/profile", json=payload, headers=headers, timeout=TIMEOUT)
+        assert r.status_code == 200, r.text
+        me = http.get(f"{BASE_URL}/api/auth/me", headers=headers, timeout=TIMEOUT).json()
+        assert me.get("about") == "Pytest about text"
+        assert me.get("daily_reminder") is True
+        assert me["socials"]["github"] == "https://github.com/pytestuser"
+        assert me["socials"]["twitter"] == "https://x.com/pytest"
+        assert me["socials"]["website"] == "https://example.com"
+
+    def test_socials_rejects_wrong_host(self, http, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        r = http.put(f"{BASE_URL}/api/profile",
+                     json={"socials": {"github": "https://evil.com/x"}},
+                     headers=headers, timeout=TIMEOUT)
+        assert r.status_code == 400
+        assert "github" in (r.json().get("message") or "").lower()
+
+    def test_socials_rejects_non_https(self, http, resend_token):
+        headers = {"Authorization": f"Bearer {resend_token}"}
+        r = http.put(f"{BASE_URL}/api/profile",
+                     json={"socials": {"github": "http://github.com/x"}},
+                     headers=headers, timeout=TIMEOUT)
+        assert r.status_code == 400
+
+
+# ---------- Iteration 4: Daily challenge ----------
+class TestDaily:
+    def test_daily_guest(self, http):
+        r = http.get(f"{BASE_URL}/api/daily", timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        assert d.get("problem") and d["problem"].get("slug")
+        assert d.get("reason")
+        # guest should not get streak/coins fields
+        assert "streak" not in d
+
+    def test_daily_logged_in(self, http, demo_token):
+        r = http.get(f"{BASE_URL}/api/daily",
+                     headers={"Authorization": f"Bearer {demo_token}"}, timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("streak", "coins", "badges", "reminder", "completed", "problem", "reason"):
+            assert k in d, f"missing {k}"
+
+    def test_fresh_user_daily_submit_rewards(self, http):
+        """Register a fresh user, fetch their daily, submit editorial, verify reward."""
+        email = f"daily_{uuid.uuid4().hex[:8]}@algoforge.dev"
+        reg = http.post(f"{BASE_URL}/api/auth/register",
+                        json={"name": "Daily T", "email": email, "password": "testing123"},
+                        timeout=TIMEOUT)
+        assert reg.status_code == 200
+        tok = reg.json()["token"]
+        headers = {"Authorization": f"Bearer {tok}"}
+        daily = http.get(f"{BASE_URL}/api/daily", headers=headers, timeout=TIMEOUT).json()
+        slug = daily["problem"]["slug"]
+        assert daily["completed"] is False
+        detail = http.get(f"{BASE_URL}/api/problems/{slug}", timeout=TIMEOUT).json()
+        code = detail["editorial"]["code"]
+        sub = http.post(f"{BASE_URL}/api/submit",
+                        json={"slug": slug, "language": "python", "code": code},
+                        headers=headers, timeout=60)
+        assert sub.status_code == 200, sub.text
+        sd = sub.json()
+        assert sd["status"] == "Accepted", sd
+        assert sd.get("daily") is not None
+        assert sd["daily"]["streak"] == 1
+        assert sd["daily"]["coins_earned"] == 10
+        after = http.get(f"{BASE_URL}/api/daily", headers=headers, timeout=TIMEOUT).json()
+        assert after["completed"] is True
+        assert after["streak"] == 1
+        assert after["coins"] == 10
+
+
+# ---------- Iteration 4: Companies ----------
+class TestCompanies:
+    def test_companies_list_guest(self, http):
+        r = http.get(f"{BASE_URL}/api/companies", timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        assert isinstance(d, list) and len(d) >= 5
+        names = [c["name"] for c in d]
+        assert "Google" in names
+        for c in d:
+            assert set(c.keys()) >= {"name", "count", "solved"}
+            assert c["solved"] == 0  # guest -> no solved
+
+    def test_companies_list_authed_shows_solved(self, http, demo_token):
+        r = http.get(f"{BASE_URL}/api/companies",
+                     headers={"Authorization": f"Bearer {demo_token}"}, timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        google = next(c for c in d if c["name"] == "Google")
+        assert google["solved"] == google["count"]  # demo solved all
+
+    def test_company_detail(self, http, demo_token):
+        r = http.get(f"{BASE_URL}/api/companies/Google",
+                     headers={"Authorization": f"Bearer {demo_token}"}, timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["name"] == "Google"
+        assert d["total"] == len(d["problems"])
+        assert d["solved"] == d["total"]
+        assert "byDifficulty" in d
+        for p in d["problems"]:
+            assert "status" in p
+            assert "slug" in p
+
+    def test_company_unknown_404(self, http):
+        r = http.get(f"{BASE_URL}/api/companies/NotARealCo_zzz", timeout=TIMEOUT)
+        assert r.status_code == 404
+
+
+# ---------- Iteration 4: Admin daily-reminders ----------
+class TestDailyReminders:
+    def test_admin_run_reminders(self, http, demo_token):
+        r = http.post(f"{BASE_URL}/api/admin/daily-reminders/run",
+                      headers={"Authorization": f"Bearer {demo_token}"}, timeout=TIMEOUT)
+        assert r.status_code == 200
+        d = r.json()
+        assert "sent" in d
+        assert isinstance(d["sent"], int)
+
+    def test_run_reminders_requires_admin(self, http, resend_token):
+        r = http.post(f"{BASE_URL}/api/admin/daily-reminders/run",
+                      headers={"Authorization": f"Bearer {resend_token}"}, timeout=TIMEOUT)
+        assert r.status_code == 403
+
+    def test_run_reminders_unauthenticated(self, http):
+        r = http.post(f"{BASE_URL}/api/admin/daily-reminders/run", timeout=TIMEOUT)
+        assert r.status_code in (401, 403)

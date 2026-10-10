@@ -29,6 +29,12 @@ Java Spring Boot + MongoDB; code runs locally on the server (Python, Java, C++, 
 - For You: "Continue where you left off" (opened/attempted, not solved) + "Recommended for you" (most-solved tags + interests)
 - JDK copied to /root/jdk17 (persists across restarts); server.py downloads Temurin 17 if it's missing
 
+## Iteration 3 (2026-06)
+- Profile photo upload (Emergent object storage, served from /api/avatars/{id}, 3 MB limit, soft-delete), about text, social links (allow-listed https hosts)
+- Daily Challenge: per-user problem each UTC day from favourite tags/interests; streak, coins (10 a day plus milestone bonus), badges at 3/7/15/30/50/100 days; opt-in reminder email at 14:00 UTC (@Scheduled), plus an admin trigger
+- Company practice: /companies grid and /companies/:name with problems and progress by difficulty; company chips on problems link to these pages
+- Note: Maven is installed under /usr (lost on pod restart, only needed to rebuild). Rebuild with: apt-get install -y maven, then mvn package
+
 ## Backlog
 - P0: Add keys: GITHUB_*, LINKEDIN_*, TWILIO_*, REACT_APP_GA_ID, REACT_APP_ADSENSE_*. OAuth redirect URIs must use the current domain (code-arena-42.preview.emergentagent.com)
 - P1: Discussion tab, daily challenge, admin panel to add problems, sandboxing (docker/nsjail), memory stats
