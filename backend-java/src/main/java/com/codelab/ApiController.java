@@ -82,8 +82,10 @@ public class ApiController {
     @PostMapping("/run")
     public Map<String, Object> run(@RequestBody RunReq r) {
         Document p = problem(r.slug());
-        validate(r.language(), r.code(), p, r.inputs());
-        List<String> inputs = r.inputs().stream().map(String::strip).toList();
+        List<String> raw = r.inputs() == null || r.inputs().isEmpty()
+                ? p.getList("sampleTests", Document.class).stream().map(t -> t.getString("input")).toList() : r.inputs();
+        validate(r.language(), r.code(), p, raw);
+        List<String> inputs = raw.stream().map(String::strip).toList();
         Executor.ExecResult res = executor.run(r.language(), r.code(), p, inputs);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("runtimeMs", res.runtimeMs());
