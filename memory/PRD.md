@@ -20,7 +20,16 @@ Java Spring Boot + MongoDB; code runs locally on the server (Python, Java, C++, 
 - Profile: solved ring, difficulty bars, 52-week heatmap, streak, acceptance rate, languages, recent submissions
 - Rebuild after Java changes: cd /app/backend-java && mvn package -DskipTests && pkill -f codelab.jar && sudo supervisorctl restart backend
 
+## Iteration 2 (2026-06)
+- 40 problems with real company tags (multiple per problem; none shown when empty), hints, edge cases, "Understand the problem"; company filter
+- Users store phone, bio, location, interests, providers, login_count, last_login/last_active, last_ip/UA; profile edit dialog; admin page /admin (ADMIN_EMAILS)
+- Login: Google (preview iframe fix: opens in a new tab, syncs across tabs), GitHub + LinkedIn OAuth (code flow, server-side state) - activate when keys are added to backend/.env; Mobile OTP via Twilio Verify, or DEMO mode (code shown on screen) until keys are set
+- Welcome email/SMS for new users, "welcome back" after 7+ days inactive, nothing for active users (Notifier.java). Email = Emergent-managed (live). SMS = MOCKED until Twilio keys are set
+- Tracking: /api/track page_view + login events in Mongo; GA4 via REACT_APP_GA_ID; AdSense slot via REACT_APP_ADSENSE_CLIENT/SLOT (placeholder for now)
+- For You: "Continue where you left off" (opened/attempted, not solved) + "Recommended for you" (most-solved tags + interests)
+- JDK copied to /root/jdk17 (persists across restarts); server.py downloads Temurin 17 if it's missing
+
 ## Backlog
-- P0: GitHub OAuth (needs Client ID/Secret), mobile OTP (needs Twilio keys)
+- P0: Add keys: GITHUB_*, LINKEDIN_*, TWILIO_*, REACT_APP_GA_ID, REACT_APP_ADSENSE_*. OAuth redirect URIs must use the current domain (code-arena-42.preview.emergentagent.com)
 - P1: Discussion tab, daily challenge, admin panel to add problems, sandboxing (docker/nsjail), memory stats
 - P2: Leaderboard, contests, linked list/tree problem types
