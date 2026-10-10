@@ -1,0 +1,186 @@
+{
+  "project_title": "CodeLab / LeetCode Platform Architecture & Design System",
+  "app_type": "saas_app",
+  "target_audience": "Developers, Computer Science Students, Competitive Programmers, Tech Job Seekers",
+  "theme_strategy": {
+    "default_mode": "dark",
+    "support_light_mode": true,
+    "dark_palette": {
+      "background_primary": "#0A0A0C",
+      "background_secondary": "#121216",
+      "background_tertiary": "#1A1A22",
+      "surface_card": "#16161D",
+      "border": "#272736",
+      "border_hover": "#3B3B54",
+      "text_primary": "#F3F4F6",
+      "text_secondary": "#9CA3AF",
+      "text_muted": "#6B7280",
+      "accent_primary": "#FFA116",
+      "accent_hover": "#FFB800",
+      "easy": "#00B8A3",
+      "medium": "#FFC01E",
+      "hard": "#FF375F",
+      "console_bg": "#0D0D12"
+    },
+    "light_palette": {
+      "background_primary": "#FAFAFA",
+      "background_secondary": "#F3F4F6",
+      "background_tertiary": "#E5E7EB",
+      "surface_card": "#FFFFFF",
+      "border": "#E2E8F0",
+      "border_hover": "#CBD5E1",
+      "text_primary": "#0F172A",
+      "text_secondary": "#475569",
+      "text_muted": "#94A3B8",
+      "accent_primary": "#E07A00",
+      "accent_hover": "#C86A00",
+      "easy": "#029E8A",
+      "medium": "#D99B00",
+      "hard": "#E11D48",
+      "console_bg": "#1E293B"
+    }
+  },
+  "typography": {
+    "font_family_heading": "Outfit, sans-serif",
+    "font_family_body": "Inter, sans-serif",
+    "font_family_code": "'Fira Code', 'JetBrains Mono', monospace",
+    "scale": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "small": "text-xs font-normal text-muted-foreground",
+      "code": "font-mono text-sm leading-relaxed"
+    }
+  },
+  "layout_architecture": {
+    "problems_list_page": {
+      "type": "High Density Data Grid & Filter Bar",
+      "sections": [
+        "Header Navigation with logo, Search input, Dark/Light Mode toggle, User Profile Avatar / Login CTA",
+        "Hero Banner / Daily Challenge Card (Gradient border, animated progress, streak count)",
+        "Filters Bar: Search query input, Tag badges (Array, String, Dynamic Programming, Graph, Hash Table), Difficulty tabs (All, Easy, Medium, Hard), Status dropdown (Solved, Unsolved, Attempted)",
+        "Problems Data Table: Status icon, Problem Title + ID, Companies tags, Acceptance Rate %, Difficulty Badge, Solved Checkmark",
+        "Pagination / Stats Footer: Showing total solved, total problems, items per page dropdown"
+      ]
+    },
+    "problem_workspace_page": {
+      "type": "Resizable Split Pane View (Left Description/Submissions - Right Code Editor & Console)",
+      "left_pane": {
+        "tabs": ["Description", "Editorial Solution", "Submissions History", "Discussion"],
+        "description_content": "Title, Difficulty Badge, Tags, Company Chips, Problem Statement (formatted with code samples, constraints bullet list, example boxes with Inputs & Outputs, complexity requirements)"
+      },
+      "right_pane": {
+        "top_bar": "Language selector (Java, Python, C++, JavaScript), Theme settings modal, Auto-save indicator, Reset Code button, Fullscreen toggle",
+        "editor": "Monaco style code view with syntax highlighting, line numbers, autocomplete boilerplate code templates per language",
+        "bottom_console": {
+          "resizable": true,
+          "tabs": ["Testcases (Custom Input)", "Test Result (Outputs, Expected vs Actual, Runtime ms, Memory MB)", "Console Logs"],
+          "action_bar": "Console collapse toggle, Run Code button (guest enabled), Submit Solution button (requires Auth trigger if logged out)"
+        }
+      }
+    },
+    "auth_modal_and_page": {
+      "type": "Interactive Dialog / Modal & Dedicated Auth Page",
+      "providers": [
+        "Email & Password (Form with validation)",
+        "Google OAuth (Mocked / Active flow)",
+        "GitHub OAuth (Mocked / Active flow)",
+        "Mobile OTP (Labelled with 'Coming Soon' tag or interactive step)"
+      ],
+      "guest_behavior": "Non-authenticated users can view problems, edit code, execute 'Run Code' testcases. Clicking 'Submit Solution' or 'Profile' triggers the Auth Modal with a clear tooltip/toast alert."
+    },
+    "user_profile_analytics": {
+      "type": "Bento Grid Dashboard",
+      "cards": [
+        "User Identity Card (Avatar, Username, Rank badge, Join Date, Streak Counter)",
+        "Solved Breakdown Radial Ring Chart (Easy/Medium/Hard progress counts vs total)",
+        "Submissions Heatmap Graph (52-week green activity grid similar to LeetCode/GitHub)",
+        "Language Proficiency Progress Bars (Java, Python, JavaScript, C++ usage %)",
+        "Recent Submissions Log Table (Problem Name, Language, Status: Accepted/Wrong Answer, Time Ago)"
+      ]
+    }
+  },
+  "components_strategy": {
+    "shadcn_components_used": [
+      "Resizable (for split view left/right & editor/console vertical split)",
+      "Tabs (for Description/Solution/Submissions & Testcase/Test Result)",
+      "Table (for problem list & recent submissions)",
+      "DropdownMenu (for language selection & user avatar menu)",
+      "Dialog / Sheet (for Auth modal & settings)",
+      "Badge (for difficulty ratings & topic tags)",
+      "Progress (for profile stats & language ratios)",
+      "Tooltip (for action hints)",
+      "Sonner (for notifications like 'Run code success', 'Please login to submit')"
+    ],
+    "custom_elements": [
+      "Custom Code Editor component with syntax highlighting",
+      "Activity Heatmap SVG renderer",
+      "Radial Donut Chart for Easy/Medium/Hard",
+      "Testcase Input/Output visual comparator"
+    ]
+  },
+  "data_testid_requirements": {
+    "global_nav": {
+      "theme_toggle": "data-testid=\"theme-toggle-button\"",
+      "nav_problems": "data-testid=\"nav-problems-link\"",
+      "nav_profile": "data-testid=\"nav-profile-link\"",
+      "nav_login": "data-testid=\"nav-login-button\"",
+      "user_avatar": "data-testid=\"user-avatar-dropdown\""
+    },
+    "problems_list": {
+      "search_input": "data-testid=\"problems-search-input\"",
+      "difficulty_filter": "data-testid=\"filter-difficulty-select\"",
+      "tag_filter": "data-testid=\"filter-tag-badge\"",
+      "problem_row": "data-testid=\"problem-row-{id}\"",
+      "problem_title": "data-testid=\"problem-title-link-{id}\""
+    },
+    "workspace": {
+      "left_tab_description": "data-testid=\"workspace-tab-description\"",
+      "left_tab_solutions": "data-testid=\"workspace-tab-solutions\"",
+      "left_tab_submissions": "data-testid=\"workspace-tab-submissions\"",
+      "language_select": "data-testid=\"editor-language-select\"",
+      "code_editor": "data-testid=\"monaco-code-editor\"",
+      "run_button": "data-testid=\"editor-run-button\"",
+      "submit_button": "data-testid=\"editor-submit-button\"",
+      "console_tab_testcase": "data-testid=\"console-tab-testcase\"",
+      "console_tab_result": "data-testid=\"console-tab-result\"",
+      "console_output": "data-testid=\"console-output-area\""
+    },
+    "auth": {
+      "login_modal": "data-testid=\"auth-modal\"",
+      "email_input": "data-testid=\"auth-email-input\"",
+      "password_input": "data-testid=\"auth-password-input\"",
+      "submit_login": "data-testid=\"auth-submit-button\"",
+      "google_button": "data-testid=\"auth-google-button\"",
+      "github_button": "data-testid=\"auth-github-button\"",
+      "mobile_otp_button": "data-testid=\"auth-mobile-otp-button\""
+    },
+    "profile": {
+      "stats_ring": "data-testid=\"profile-solved-stats-chart\"",
+      "heatmap": "data-testid=\"profile-submissions-heatmap\"",
+      "submissions_list": "data-testid=\"profile-recent-submissions-table\""
+    }
+  },
+  "image_urls": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1740252117013-4fb21771e7ca?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHw0fHxkZXZlbG9wZXIlMjBhdmF0YXIlMjBwcm9maWxlJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzkxNjQxMzIwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Developer profile avatar icon"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1566753323558-f4e0952af115?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwzfHxkZXZlbG9wZXIlMjBhdmF0YXIlMjBwcm9maWxlJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzkxNjQxMzIwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Alternative developer profile picture"
+      }
+    ]
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Ensure dark/light mode toggle works flawlessly across all pages using standard Tailwind dark class on html container.",
+    "Never use generic centered layouts or unstyled default HTML select/input elements. Use Shadcn components and custom styled borders.",
+    "Ensure non-logged-in users can navigate, view problem statements, write code in editor, change languages, and click 'Run Code' to see console outputs.",
+    "When non-logged-in user clicks 'Submit Solution' or attempts to access Profile, prompt Auth Dialog with Sonner notification.",
+    "All interactive elements MUST contain appropriate data-testid attributes specified in data_testid_requirements.",
+    "Ensure Monaco/CodeEditor container is responsive and fills remaining height properly without overflowing page body."
+  ]
+}

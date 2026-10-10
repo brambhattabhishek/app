@@ -1,0 +1,45 @@
+public class Main {
+  static int pInt(String s) { return Integer.parseInt(s.trim()); }
+  static double pDouble(String s) { return Double.parseDouble(s.trim()); }
+  static boolean pBool(String s) { return s.trim().equals("true"); }
+  static String pStr(String s) {
+    s = s.trim(); s = s.substring(1, s.length() - 1);
+    StringBuilder b = new StringBuilder();
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == '\\' && i + 1 < s.length()) { char d = s.charAt(++i); b.append(d == 'n' ? '\n' : d == 't' ? '\t' : d); }
+      else b.append(c);
+    }
+    return b.toString();
+  }
+  static int[] pIntArr(String s) {
+    s = s.trim(); s = s.substring(1, s.length() - 1).trim();
+    if (s.isEmpty()) return new int[0];
+    String[] p = s.split(",");
+    int[] r = new int[p.length];
+    for (int i = 0; i < p.length; i++) r[i] = Integer.parseInt(p[i].trim());
+    return r;
+  }
+  static String ser(int v) { return String.valueOf(v); }
+  static String ser(boolean v) { return v ? "true" : "false"; }
+  static String ser(double v) { return String.format(Locale.US, "%.5f", v); }
+  static String ser(String v) { return "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
+  static String ser(int[] v) {
+    StringBuilder b = new StringBuilder("[");
+    for (int i = 0; i < v.length; i++) { if (i > 0) b.append(','); b.append(v[i]); }
+    return b.append(']').toString();
+  }
+  public static void main(String[] __args) throws Exception {
+    BufferedReader __br = new BufferedReader(new InputStreamReader(System.in));
+    List<String> __l = new ArrayList<>();
+    String __s;
+    while ((__s = __br.readLine()) != null) __l.add(__s);
+    int __n = Integer.parseInt(__l.get(0).trim());
+    int __idx = 1;
+    for (int __i = 0; __i < __n; __i++) {
+__DECL__
+      System.out.println("@@CASE@@");
+      System.out.println("@@RESULT@@" + ser(__CALL__));
+    }
+  }
+}

@@ -1,0 +1,32 @@
+static string __trim(const string& s) { size_t a = s.find_first_not_of(" \t\r\n"); if (a == string::npos) return ""; size_t b = s.find_last_not_of(" \t\r\n"); return s.substr(a, b - a + 1); }
+int pInt(const string& s) { return stoi(__trim(s)); }
+double pDouble(const string& s) { return stod(__trim(s)); }
+bool pBool(const string& s) { return __trim(s) == "true"; }
+string pStr(const string& s0) {
+  string s = __trim(s0); s = s.substr(1, s.size() - 2); string r;
+  for (size_t i = 0; i < s.size(); i++) { char c = s[i]; if (c == '\\' && i + 1 < s.size()) { char d = s[++i]; r += d == 'n' ? '\n' : d == 't' ? '\t' : d; } else r += c; }
+  return r;
+}
+vector<int> pIntArr(const string& s0) {
+  string s = __trim(s0); s = s.substr(1, s.size() - 2); vector<int> r; stringstream ss(s); string x;
+  while (getline(ss, x, ',')) { x = __trim(x); if (!x.empty()) r.push_back(stoi(x)); }
+  return r;
+}
+string ser(int v) { return to_string(v); }
+string ser(bool v) { return v ? "true" : "false"; }
+string ser(double v) { char b[64]; snprintf(b, sizeof b, "%.5f", v); return b; }
+string ser(const string& v) { string r = "\""; for (char c : v) { if (c == '"' || c == '\\') r += '\\'; r += c; } return r + "\""; }
+string ser(const vector<int>& v) { string r = "["; for (size_t i = 0; i < v.size(); i++) { if (i) r += ","; r += to_string(v[i]); } return r + "]"; }
+
+int main() {
+  vector<string> __l; string __s;
+  while (getline(cin, __s)) __l.push_back(__s);
+  int __n = stoi(__l[0]); size_t __idx = 1;
+  for (int __i = 0; __i < __n; __i++) {
+__DECL__
+    cout << "@@CASE@@" << endl;
+    Solution __sol;
+    cout << "@@RESULT@@" << ser(__CALL__) << endl;
+  }
+  return 0;
+}

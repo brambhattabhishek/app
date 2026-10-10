@@ -1,0 +1,126 @@
+import { useEffect, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
+import { Flame, CalendarDays, Target, Send } from "lucide-react";
+import { api, langLabel, timeAgo } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { Avatar } from "@/components/Navbar";
+import { diffCls } from "@/pages/ProblemsPage";
+
+const Card = ({ children, className = "", delay = 0, ...rest }) => (
+  <div className={`rise rounded-2xl border bg-card p-6 ${className}`} style={{ animationDelay: `${delay}ms` }} {...rest}>{children}</div>
+);
+
+function SolvedRing({ d }) {
+  const r = 58, c = 2 * Math.PI * r, pct = d.totalProblems ? d.solved / d.totalProblems : 0;
+  return (
+    <div className="flex items-center gap-8 flex-wrap" data-testid="profile-solved-stats-chart">
+      <div className="relative w-36 h-36">
+        <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
+          <circle cx="70" cy="70" r={r} fill="none" stroke="hsl(var(--secondary))" strokeWidth="10" />
+          <circle cx="70" cy="70" r={r} fill="none" stroke="hsl(var(--primary))" strokeWidth="10" strokeLinecap="round"
+            strokeDasharray={c} strokeDashoffset={c * (1 - pct)} style={{ transition: "stroke-dashoffset 1s ease" }} />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center text-center">
+          <div><div className="font-heading text-3xl font-bold" data-testid="profile-solved-count">{d.solved}<span className="text-base text-muted-foreground">/{d.totalProblems}</span></div><div className="text-xs text-muted-foreground">Solved</div></div>
+        </div>
+      </div>
+      <div className="flex-1 min-w-[180px] space-y-3">
+        {["Easy", "Medium", "Hard"].map((k) => (
+          <div key={k}>
+            <div className="flex justify-between text-sm mb-1"><span className={`font-semibold ${diffCls[k]}`}>{k}</span><span className="text-muted-foreground">{d.solvedBy[k]}/{d.totals[k]}</span></div>
+            <div className="h-1.5 rounded-full bg-secondary overflow-hidden"><div className={`h-full ${diffCls[k].replace("text", "bg")}`} style={{ width: `${d.totals[k] ? (d.solvedBy[k] / d.totals[k]) * 100 : 0}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Heatmap({ data }) {
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const start = new Date(today); start.setUTCDate(start.getUTCDate() - 52 * 7 - today.getUTCDay());
+  const weeks = [];
+  for (let w = 0; w < 53; w++) {
+    const days = [];
+    for (let d = 0; d < 7; d++) {
+      const dt = new Date(start); dt.setUTCDate(start.getUTCDate() + w * 7 + d);
+      const k = dt.toISOString().slice(0, 10);
+      days.push(dt > today ? null : { k, n: data[k] || 0 });
+    }
+    weeks.push(days);
+  }
+  const shade = (n) => (n === 0 ? "hsl(var(--secondary))" : `hsl(var(--primary) / ${Math.min(0.3 + n * 0.18, 1)})`);
+  return (
+    <div className="overflow-x-auto" data-testid="profile-submissions-heatmap">
+      <div className="flex gap-[3px] w-max">
+        {weeks.map((w, i) => (
+          <div key={i} className="flex flex-col gap-[3px]">
+            {w.map((c, j) => <div key={j} title={c ? `${c.n} submissions on ${c.k}` : ""} className="w-[11px] h-[11px] rounded-[3px]" style={{ background: c ? shade(c.n) : "transparent" }} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const Stat = ({ icon: Icon, label, value, testid }) => (
+  <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-secondary grid place-items-center"><Icon className="w-4 h-4 text-primary" /></div>
+    <div><div className="font-heading text-xl font-bold" data-testid={testid}>{value}</div><div className="text-xs text-muted-foreground">{label}</div></div></div>
+);
+
+export default function ProfilePage() {
+  const { user } = useAuth();
+  const [d, setD] = useState(null);
+  useEffect(() => { if (user) api.get("/profile").then(({ data }) => setD(data)); }, [user]);
+
+  if (user === false) return <Navigate to="/login" state={{ from: "/profile" }} replace />;
+  if (!d) return <div className="p-10 text-muted-foreground text-sm">Loading profile…</div>;
+  const langTotal = Object.values(d.languages).reduce((a, b) => a + b, 0);
+
+  return (
+    <main className="relative z-10 max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <Card className="lg:row-span-2 flex flex-col gap-6" data-testid="profile-identity-card">
+        <div className="flex items-center gap-4">
+          <Avatar user={d.user} size={64} />
+          <div className="min-w-0"><h1 className="font-heading text-2xl font-bold truncate" data-testid="profile-name">{d.user.name}</h1><p className="text-sm text-muted-foreground truncate">{d.user.email}</p></div>
+        </div>
+        <p className="text-xs text-muted-foreground">Joined {new Date(d.user.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" })} · via {d.user.provider}</p>
+        <div className="grid grid-cols-2 gap-5">
+          <Stat icon={Flame} label="Day streak" value={d.streak} testid="profile-streak" />
+          <Stat icon={CalendarDays} label="Active days" value={d.activeDays} testid="profile-active-days" />
+          <Stat icon={Send} label="Submissions" value={d.totalSubmissions} testid="profile-total-submissions" />
+          <Stat icon={Target} label="Acceptance" value={`${d.acceptanceRate}%`} testid="profile-acceptance-rate" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Languages</p>
+          {!langTotal && <p className="text-sm text-muted-foreground">No submissions yet.</p>}
+          <div className="space-y-3" data-testid="profile-languages">
+            {Object.entries(d.languages).sort((a, b) => b[1] - a[1]).map(([l, n]) => (
+              <div key={l}><div className="flex justify-between text-sm mb-1"><span>{langLabel(l)}</span><span className="text-muted-foreground">{n}</span></div>
+                <div className="h-1.5 rounded-full bg-secondary overflow-hidden"><div className="h-full bg-primary" style={{ width: `${(n / langTotal) * 100}%` }} /></div></div>
+            ))}
+          </div>
+        </div>
+      </Card>
+      <Card className="lg:col-span-2" delay={80}><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-5">Solved problems</p><SolvedRing d={d} /></Card>
+      <Card className="lg:col-span-2" delay={160}>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">{d.totalSubmissions} submissions in the past year</p>
+        <Heatmap data={d.heatmap} />
+      </Card>
+      <Card className="lg:col-span-3" delay={240}>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Recent submissions</p>
+        <div className="divide-y" data-testid="profile-recent-submissions-table">
+          {!d.recent.length && <p className="text-sm text-muted-foreground py-6">Nothing yet — <Link to="/" className="text-primary font-semibold">solve your first problem</Link>.</p>}
+          {d.recent.map((s) => (
+            <Link to={`/problems/${s.slug}`} key={s.submission_id} className="grid grid-cols-[1fr_120px_90px_80px] items-center py-3 text-sm hover:bg-accent/50 px-2 rounded-md transition-colors">
+              <span className="font-medium truncate">{s.title}</span>
+              <span className={`font-semibold ${s.status === "Accepted" ? "text-easy" : "text-hard"}`}>{s.status}</span>
+              <span className="text-xs text-muted-foreground">{langLabel(s.language)}</span>
+              <span className="text-xs text-muted-foreground text-right">{timeAgo(s.created_at)}</span>
+            </Link>
+          ))}
+        </div>
+      </Card>
+    </main>
+  );
+}
