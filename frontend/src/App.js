@@ -12,6 +12,8 @@ import ProfilePage from "@/pages/ProfilePage";
 import AuthCallback from "@/pages/AuthCallback";
 import OAuthCallback from "@/pages/OAuthCallback";
 import AdminPage from "@/pages/AdminPage";
+import CompaniesPage from "@/pages/CompaniesPage";
+import CompanyPage from "@/pages/CompanyPage";
 import { initAnalytics, track } from "@/lib/analytics";
 
 function PageTracker() {
@@ -36,6 +38,8 @@ function AppRouter() {
         <Route path="/auth/oauth/:provider" element={<OAuthCallback />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/companies" element={<CompaniesPage />} />
+        <Route path="/companies/:name" element={<CompanyPage />} />
       </Routes>
     </div>
   );

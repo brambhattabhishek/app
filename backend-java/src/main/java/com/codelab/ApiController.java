@@ -23,6 +23,7 @@ public class ApiController {
     @Autowired MongoTemplate mongo;
     @Autowired Executor executor;
     @Autowired AuthService auth;
+    @Autowired DailyController daily;
     static final List<String> LANGS = List.of("python", "java", "cpp", "javascript");
 
     record RunReq(String slug, String language, String code, List<String> inputs) {}
@@ -149,6 +150,7 @@ public class ApiController {
         progress(u, p.getString("slug"), new Document("last_opened", new Date()).append("last_status", status));
         Map<String, Object> out = clean(sub);
         out.put("failedCase", failed);
+        out.put("daily", status.equals("Accepted") ? daily.onAccepted(u, p.getString("slug")) : null);
         out.put("error", res.error());
         return out;
     }
@@ -207,7 +209,10 @@ public class ApiController {
         return out;
     }
 
-    record ProfileReq(String name, String bio, String location, String phone, List<String> interests) {}
+    record ProfileReq(String name, String bio, String about, String location, String phone, List<String> interests,
+                      Map<String, String> socials, Boolean daily_reminder) {}
+    static final Map<String, String> SOCIAL_HOSTS = Map.of("github", "github.com", "linkedin", "linkedin.com", "twitter", "x.com|twitter.com",
+            "leetcode", "leetcode.com", "youtube", "youtube.com", "instagram", "instagram.com", "website", "");
 
     @PutMapping("/profile")
     public Map<String, Object> updateProfile(@RequestHeader(value = "Authorization", required = false) String h, @RequestBody ProfileReq r) {
@@ -220,6 +225,24 @@ public class ApiController {
         if (r.bio() != null) set.append("bio", r.bio().length() > 280 ? r.bio().substring(0, 280) : r.bio());
         if (r.location() != null) set.append("location", r.location().length() > 80 ? r.location().substring(0, 80) : r.location());
         if (r.interests() != null) set.append("interests", r.interests().stream().limit(10).toList());
+        if (r.about() != null) set.append("about", r.about().length() > 1500 ? r.about().substring(0, 1500) : r.about());
+        if (r.daily_reminder() != null) set.append("daily_reminder", r.daily_reminder());
+        if (r.socials() != null) {
+            Document soc = new Document();
+            for (var e : r.socials().entrySet()) {
+                String v = e.getValue() == null ? "" : e.getValue().trim();
+                if (v.isEmpty() || !SOCIAL_HOSTS.containsKey(e.getKey())) continue;
+                java.net.URI uri;
+                try { uri = new java.net.URI(v); } catch (Exception ex) { uri = null; }
+                String host = uri == null || uri.getHost() == null ? "" : uri.getHost().toLowerCase().replaceFirst("^www\\.", "");
+                String allowed = SOCIAL_HOSTS.get(e.getKey());
+                boolean ok = uri != null && "https".equals(uri.getScheme()) && !host.isEmpty() && v.length() <= 200
+                        && (allowed.isEmpty() || Arrays.stream(allowed.split("\\|")).anyMatch(a -> host.equals(a) || host.endsWith("." + a)));
+                if (!ok) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid " + e.getKey() + " link — use a full https:// URL" + (allowed.isEmpty() ? "" : " on " + allowed.replace("|", " or ")));
+                soc.append(e.getKey(), v);
+            }
+            set.append("socials", soc);
+        }
         Document unset = new Document();
         if (r.phone() != null) {
             String ph = r.phone().replaceAll("[\\s-]", "");

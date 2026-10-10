@@ -18,6 +18,7 @@ import java.util.Map;
 import static com.mongodb.client.model.Filters.eq;
 
 @SpringBootApplication
+@org.springframework.scheduling.annotation.EnableScheduling
 public class CodelabApplication {
     public static void main(String[] args) {
         SpringApplication.run(CodelabApplication.class, args);
@@ -43,6 +44,7 @@ public class CodelabApplication {
             users.createIndex(new Document("github_id", 1), new IndexOptions().unique(true).partialFilterExpression(new Document("github_id", new Document("$type", "string"))));
             users.createIndex(new Document("linkedin_sub", 1), new IndexOptions().unique(true).partialFilterExpression(new Document("linkedin_sub", new Document("$type", "string"))));
             mongo.getCollection("progress").createIndex(new Document("user_id", 1).append("slug", 1), new IndexOptions().unique(true));
+            mongo.getCollection("daily").createIndex(new Document("user_id", 1).append("date", 1), new IndexOptions().unique(true));
             mongo.getCollection("events").createIndex(new Document("created_at", -1));
             mongo.getCollection("oauth_states").createIndex(new Document("created_at", 1), new IndexOptions().expireAfter(600L, java.util.concurrent.TimeUnit.SECONDS));
             mongo.getCollection("otp_codes").createIndex(new Document("created_at", 1), new IndexOptions().expireAfter(900L, java.util.concurrent.TimeUnit.SECONDS));

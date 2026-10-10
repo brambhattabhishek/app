@@ -6,8 +6,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+export const picUrl = (pic) => (pic?.startsWith("/api/") ? `${process.env.REACT_APP_BACKEND_URL}${pic}` : pic);
+
 export function Avatar({ user, size = 32 }) {
-  if (user?.picture) return <img src={user.picture} alt={user.name} style={{ width: size, height: size }} className="rounded-full object-cover" />;
+  if (user?.picture) return <img src={picUrl(user.picture)} alt={user.name} style={{ width: size, height: size }} className="rounded-full object-cover" />;
   return (
     <div style={{ width: size, height: size }} className="rounded-full bg-primary text-primary-foreground grid place-items-center font-heading font-bold" >
       {(user?.name || "?").slice(0, 1).toUpperCase()}
@@ -32,6 +34,7 @@ export default function Navbar() {
         </Link>
         <nav className="flex items-center gap-1">
           <NavLink to="/" end className={linkCls} data-testid="nav-problems-link">Problems</NavLink>
+          <NavLink to="/companies" className={linkCls} data-testid="nav-companies-link">Companies</NavLink>
           {user && <NavLink to="/profile" className={linkCls} data-testid="nav-profile-link">Profile</NavLink>}
           {user?.is_admin && <NavLink to="/admin" className={linkCls} data-testid="nav-admin-link">Admin</NavLink>}
         </nav>

@@ -3,5 +3,8 @@
 /app/backend-java/src/main/java/com/codelab/AuthService.java
 /app/backend-java/src/main/java/com/codelab/CodeTemplates.java
 /app/backend-java/src/main/java/com/codelab/CodelabApplication.java
+/app/backend-java/src/main/java/com/codelab/DailyController.java
 /app/backend-java/src/main/java/com/codelab/Executor.java
 /app/backend-java/src/main/java/com/codelab/Notifier.java
+/app/backend-java/src/main/java/com/codelab/ProfileController.java
+/app/backend-java/src/main/java/com/codelab/Storage.java

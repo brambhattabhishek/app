@@ -57,7 +57,7 @@ public class AuthService {
 
     public static Map<String, Object> publicUser(Document u) {
         Map<String, Object> m = new LinkedHashMap<>();
-        for (String k : List.of("user_id", "name", "email", "phone", "picture", "provider", "providers", "bio", "location", "interests",
+        for (String k : List.of("user_id", "name", "email", "phone", "picture", "provider", "providers", "bio", "about", "socials", "location", "interests", "daily_reminder", "daily_streak", "daily_best", "coins", "badges",
                 "github_login", "created_at", "last_login_at", "login_count"))
             m.put(k, u.get(k));
         m.put("is_admin", isAdmin(u));

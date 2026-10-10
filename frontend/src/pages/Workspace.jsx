@@ -64,6 +64,7 @@ export default function Workspace() {
       setResult({ kind: "submit", ...data });
       setSubsKey((k) => k + 1);
       data.status === "Accepted" ? toast.success("Accepted! Nice work.") : toast.error(data.status);
+      if (data.daily) toast.success(`Daily challenge complete! ${data.daily.streak}-day streak · +${data.daily.coins_earned} coins${data.daily.badge ? ` · Badge: ${data.daily.badge}` : ""}`);
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(null); }
   }, [user, slug, lang, code, navigate]);
 

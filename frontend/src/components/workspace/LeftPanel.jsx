@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Lightbulb, Clock, Lock, Building2, ChevronDown, BookOpen, AlertTriangle } from "lucide-react";
 import { api, langLabel, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -55,7 +55,7 @@ function Description({ p }) {
       {!!p.companies?.length && (
         <div className="flex flex-wrap items-center gap-2 -mt-3 mb-6" data-testid="problem-companies">
           <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-          {p.companies.map((c) => <span key={c} className="text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary">{c}</span>)}
+          {p.companies.map((c) => <Link key={c} to={`/companies/${encodeURIComponent(c)}`} data-testid={`company-chip-${c.toLowerCase().replace(/\s+/g, "-")}`} className="text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary hover:bg-primary/10 transition-colors">{c}</Link>)}
         </div>
       )}
       <div className="prose-lc text-[15px]" dangerouslySetInnerHTML={{ __html: p.description }} />

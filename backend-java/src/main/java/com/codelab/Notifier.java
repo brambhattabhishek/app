@@ -92,6 +92,32 @@ public class Notifier {
         }
     }
 
+    public void dailyReminder(Document u, String title, String slug, int streak) {
+        String brand = env("EMAIL_FROM_NAME"), app = env("APP_URL");
+        String subject = "Your " + brand + " daily challenge: " + title;
+        String streakLine = streak > 0 ? "Keep your " + streak + "-day streak alive — solve it before midnight (UTC)." : "Solve it today to start a new streak.";
+        String html = "<table role=\"presentation\" width=\"100%\" style=\"background:#0A0A0C\"><tr><td style=\"padding:32px;font-family:Arial,sans-serif;color:#F3F4F6\">"
+                + "<h2 style=\"margin:0 0 12px;color:#FFA116\">Today's challenge: " + HtmlUtils.htmlEscape(title) + "</h2>"
+                + "<p>Hi " + HtmlUtils.htmlEscape(Optional.ofNullable(u.getString("name")).orElse("there")) + ",</p><p>" + streakLine + "</p>"
+                + "<p><a href=\"" + app + "/problems/" + slug + "\" style=\"display:inline-block;background:#FFA116;color:#0A0A0C;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold\">Solve now</a></p>"
+                + "<p style=\"font-size:12px;color:#888\">You get this because you turned on daily reminders in your " + HtmlUtils.htmlEscape(brand) + " profile. Turn them off anytime from your profile.</p></td></tr></table>";
+        sendRaw(u, "daily_reminder", subject, html);
+    }
+
+    void sendRaw(Document u, String kind, String subject, String html) {
+        try {
+            assertSafe(html);
+            Map<String, Object> payload = Map.of("to", List.of(u.getString("email")), "subject", subject, "html", html, "from_name", env("EMAIL_FROM_NAME"));
+            HttpRequest req = HttpRequest.newBuilder(URI.create(EMAIL_BASE_URL + "/api/v1/email/send"))
+                    .header("X-Email-Key", env("EMERGENT_EMAIL_KEY")).header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(om.writeValueAsString(payload))).build();
+            HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
+            log(u, "email", kind, u.getString("email"), r.statusCode() < 300 ? "sent" : "failed", r.statusCode() < 300 ? null : r.body());
+        } catch (Exception e) {
+            log(u, "email", kind, u.getString("email"), "failed", e.getMessage());
+        }
+    }
+
     static void assertSafe(String html) {
         String low = html.toLowerCase();
         if (low.contains("<form") || low.contains("<input")) throw new IllegalStateException("forms not allowed in email");

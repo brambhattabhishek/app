@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { Flame, CalendarDays, Target, Send, MapPin, Phone, KeyRound } from "lucide-react";
 import EditProfile from "@/components/EditProfile";
+import AvatarUpload from "@/components/AvatarUpload";
+import Socials from "@/components/Socials";
+import { Coins, Award } from "lucide-react";
 import { api, langLabel, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Avatar } from "@/components/Navbar";
 import { diffCls } from "@/pages/ProblemsPage";
 
 const Card = ({ children, className = "", delay = 0, ...rest }) => (
@@ -82,10 +84,11 @@ export default function ProfilePage() {
     <main className="relative z-10 max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
       <Card className="lg:row-span-2 flex flex-col gap-6" data-testid="profile-identity-card">
         <div className="flex items-center gap-4">
-          <Avatar user={d.user} size={64} />
+          <AvatarUpload user={d.user} onChange={(u) => { setD({ ...d, user: u }); setUser(u); }} />
           <div className="min-w-0"><h1 className="font-heading text-2xl font-bold truncate" data-testid="profile-name">{d.user.name}</h1><p className="text-sm text-muted-foreground truncate">{d.user.email}</p></div>
         </div>
         {d.user.bio && <p className="text-sm leading-6" data-testid="profile-bio">{d.user.bio}</p>}
+        <Socials socials={d.user.socials} />
         <div className="space-y-1.5 text-xs text-muted-foreground" data-testid="profile-details">
           {d.user.location && <p className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5" />{d.user.location}</p>}
           {d.user.phone && <p className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{d.user.phone}</p>}
@@ -101,6 +104,8 @@ export default function ProfilePage() {
           <Stat icon={CalendarDays} label="Active days" value={d.activeDays} testid="profile-active-days" />
           <Stat icon={Send} label="Submissions" value={d.totalSubmissions} testid="profile-total-submissions" />
           <Stat icon={Target} label="Acceptance" value={`${d.acceptanceRate}%`} testid="profile-acceptance-rate" />
+          <Stat icon={Flame} label="Daily streak (best)" value={`${d.user.daily_streak || 0} (${d.user.daily_best || 0})`} testid="profile-daily-streak" />
+          <Stat icon={Coins} label="Coins" value={d.user.coins || 0} testid="profile-coins" />
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Languages</p>
@@ -113,6 +118,16 @@ export default function ProfilePage() {
           </div>
         </div>
       </Card>
+      {(d.user.about || d.user.badges?.length) && (
+        <Card className="lg:col-span-2" delay={40} data-testid="profile-about-card">
+          {d.user.about && <><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">About</p><p className="text-sm leading-7 whitespace-pre-line" data-testid="profile-about">{d.user.about}</p></>}
+          {!!d.user.badges?.length && (
+            <div className={`flex flex-wrap gap-2 ${d.user.about ? "mt-4" : ""}`} data-testid="profile-badges">
+              {d.user.badges.map((b) => <span key={b} className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/15 text-primary"><Award className="w-3.5 h-3.5" />{b}</span>)}
+            </div>
+          )}
+        </Card>
+      )}
       <Card className="lg:col-span-2" delay={80}><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-5">Solved problems</p><SolvedRing d={d} /></Card>
       <Card className="lg:col-span-2" delay={160}>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">{d.totalSubmissions} submissions in the past year</p>

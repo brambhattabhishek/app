@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import ForYou from "@/components/ForYou";
+import DailyChallenge from "@/components/DailyChallenge";
 import AdSlot from "@/components/AdSlot";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -68,6 +69,7 @@ export default function ProblemsPage() {
         <StatCard label="Hard" solved={count("Hard", true)} total={count("Hard")} cls="text-hard" delay={180} />
       </div>
 
+      <DailyChallenge />
       <ForYou />
 
       <div className="flex flex-wrap gap-2 mb-4">
