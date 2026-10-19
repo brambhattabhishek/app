@@ -15,6 +15,9 @@ WORKDIR /app
 
 COPY --from=build /app/target/codelab.jar app.jar
 
+# Render can supply PORT; default to 8095 locally
+ENV PORT=8095
+
 EXPOSE 8095
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar", "--server.port=${PORT}"]

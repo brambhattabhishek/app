@@ -20,13 +20,13 @@ JAVA_JAR = os.environ["JAVA_JAR"]
 HOP = {"host", "content-length", "connection", "transfer-encoding", "content-encoding"}
 
 app = FastAPI()
-client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{JAVA_PORT}", timeout=120)
+client = httpx.AsyncClient(base_url=f"http://localhost:{JAVA_PORT}", timeout=120)
 
 
 def java_up() -> bool:
     with socket.socket() as s:
         s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", JAVA_PORT)) == 0
+        return s.connect_ex(("localhost", JAVA_PORT)) == 0
 
 
 def ensure_jdk() -> str:
