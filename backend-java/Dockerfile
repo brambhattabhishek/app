@@ -22,3 +22,4 @@ ENV PORT=8095
 EXPOSE 8095
 
 ENTRYPOINT ["sh", "-c", "exec java -jar app.jar --server.port=${PORT:-8095}"]
+#commit
