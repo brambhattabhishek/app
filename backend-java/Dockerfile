@@ -1,3 +1,4 @@
+
 # Build stage
 FROM maven:3.9-eclipse-temurin-17 AS build
 
@@ -15,9 +16,9 @@ WORKDIR /app
 
 COPY --from=build /app/target/codelab.jar app.jar
 
-# Render can supply PORT; default to 8095 locally
+# Local default; Render can override PORT
 ENV PORT=8095
 
 EXPOSE 8095
 
-ENTRYPOINT ["java", "-jar", "app.jar", "--server.port=${PORT}"]
+ENTRYPOINT ["sh", "-c", "exec java -jar app.jar --server.port=${PORT:-8095}"]
