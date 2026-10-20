@@ -15,7 +15,7 @@ services:
       - ./backend/.env
     environment:
       APP_URL: ${APP_URL:-http://localhost:3000}
-      MONGO_URL: mongodb://mongo:27017
+      MONGO_URL: mongodb+srv://abhishekumashankar_db_user:Abhishek195@cluster0.v1uhdia.mongodb.net/codelab
       SERVER_PORT: 8095
     ports:
       - "8095:8095"
