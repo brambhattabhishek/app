@@ -11,7 +11,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8080").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://app-16-xiwa.onrender.com").rstrip("/")
 TIMEOUT = 30
 
 
