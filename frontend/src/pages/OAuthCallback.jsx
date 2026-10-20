@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
@@ -15,22 +19,59 @@ export default function OAuthCallback() {
   useEffect(() => {
     if (done.current) return;
     done.current = true;
-    const code = params.get("code"), state = params.get("state");
-    const back = localStorage.getItem("cl_after_login") || "/";
-    localStorage.removeItem("cl_after_login");
-    if (!code) {
-      toast.error(params.get("error_description") || "Login was cancelled");
+
+    const code = params.get("code");
+    const state = params.get("state");
+    const oauthError = params.get("error");
+    const description = params.get("error_description");
+
+    if (!["github", "linkedin"].includes(provider)) {
+      toast.error("Unsupported login provider.");
       navigate("/login", { replace: true });
       return;
     }
-    api.post(`/auth/oauth/${provider}/callback`, { code, state })
-      .then(({ data }) => { login(data); navigate(back, { replace: true }); })
-      .catch((e) => { toast.error(errMsg(e)); navigate("/login", { replace: true }); });
+
+    if (oauthError || !code || !state) {
+      toast.error(
+          description
+              ? decodeURIComponentSafe(description)
+              : oauthError === "access_denied"
+                  ? "Login was cancelled."
+                  : "Invalid OAuth callback. Please try again."
+      );
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    const back = localStorage.getItem("cl_after_login") || "/";
+    localStorage.removeItem("cl_after_login");
+
+    api
+        .post(`/auth/oauth/${provider}/callback`, { code, state })
+        .then(({ data }) => {
+          login(data);
+          navigate(back, { replace: true });
+        })
+        .catch((error) => {
+          toast.error(errMsg(error));
+          navigate("/login", { replace: true });
+        });
   }, [params, provider, login, navigate]);
 
   return (
-    <div className="min-h-[calc(100vh-48px)] grid place-items-center" data-testid="oauth-callback">
-      <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="w-4 h-4 animate-spin" />Completing {provider} sign in…</div>
-    </div>
+      <div className="min-h-[calc(100vh-48px)] grid place-items-center">
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Completing {provider} sign in…
+        </div>
+      </div>
   );
+}
+
+function decodeURIComponentSafe(value) {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
 }
