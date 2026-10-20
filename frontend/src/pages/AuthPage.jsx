@@ -100,14 +100,14 @@ export default function AuthPage() {
   const done = (data) => { login(data); track("login", { method: data.user.provider }); navigate(from, { replace: true }); };
 
   const google = () => {
-    const backendUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
-    if (!backendUrl) {
-      toast.error("Backend API URL is not configured.");
-      return;
-    }
     localStorage.setItem("cl_after_login", from);
-    window.location.href =
-        `${backendUrl}/oauth2/authorization/google`;
+    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    const redirectUrl = window.location.origin + "/";
+    const url = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    if (window.self !== window.top) {
+      window.open(url, "_blank");
+      toast.info("Google sign-in opened in a new tab (it can't run inside the preview frame).");
+    } else window.location.href = url;
   };
 
   const oauth = async (provider) => {
