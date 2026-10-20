@@ -30,7 +30,7 @@ export default function Navbar() {
       <div className="h-full px-4 flex items-center gap-4">
         <Link to="/" className="flex items-center gap-2 mr-2" data-testid="nav-logo">
           <span className="w-7 h-7 rounded-md bg-primary grid place-items-center"><Code2 className="w-4 h-4 text-primary-foreground" /></span>
-          <span className="font-heading font-bold tracking-tight text-lg">algo<span className="text-primary">forge</span></span>
+          <span className="font-heading font-bold tracking-tight text-lg">Code<span className="text-primary">UP</span></span>
         </Link>
         <nav className="flex items-center gap-1">
           <NavLink to="/" end className={linkCls} data-testid="nav-problems-link">Problems</NavLink>
