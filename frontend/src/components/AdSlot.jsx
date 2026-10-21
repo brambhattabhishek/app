@@ -62,26 +62,26 @@ export default function AdSlot({ id, className = "" }) {
   }, []);
 
   if (!CLIENT || !SLOT) {
-    return (
-        <div
-            data-testid={`ad-slot-${id}`}
-            className={`rounded-xl border border-dashed grid place-items-center text-xs text-muted-foreground py-6 ${className}`}
-        >
-          Advertisement
-        </div>
+    return ( ""
+        // <div
+        //     data-testid={`ad-slot-${id}`}
+        //     className={`rounded-xl border border-dashed grid place-items-center text-xs text-muted-foreground py-6 ${className}`}
+        // >
+        //   Advertisement
+        // </div>
     );
   }
 
-  return (
-      <ins
-          ref={adRef}
-          data-testid={`ad-slot-${id}`}
-          className={`adsbygoogle block ${className}`}
-          style={{ display: "block", minHeight: "100px" }}
-          data-ad-client={CLIENT}
-          data-ad-slot={SLOT}
-          data-ad-format="auto"
-          data-full-width-responsive="true"
-      />
+  return (""
+      // <ins
+      //     ref={adRef}
+      //     data-testid={`ad-slot-${id}`}
+      //     className={`adsbygoogle block ${className}`}
+      //     style={{ display: "block", minHeight: "100px" }}
+      //     data-ad-client={CLIENT}
+      //     data-ad-slot={SLOT}
+      //     data-ad-format="auto"
+      //     data-full-width-responsive="true"
+      // />
   );
 }
