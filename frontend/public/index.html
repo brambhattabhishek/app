@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,117 +10,198 @@
 
     <meta name="theme-color" content="#ffa114" />
 
-    <!-- Primary SEO -->
-    <title>CodWP - Free Coding Practice & DSA Interview Preparation</title>
+    <!-- ============================================================
+         PRIMARY SEO — Optimized for DSA, Coding Interview, LeetCode
+         ============================================================ -->
+    <title>CodWP — DSA Practice, Brute Force to Optimal Solutions & Coding Interview Prep</title>
 
     <meta
             name="description"
-            content="Practice DSA problems online with CodWP. Solve coding challenges, explore company-wise interview questions, improve problem-solving skills, and prepare for technical interviews."
+            content="CodWP is the only platform with Brute Force → Better → Optimal solutions for every DSA problem. Practice arrays, algorithms, data structures, and crack coding interviews at LeetCode, FAANG, and top IT companies. Free DSA practice online."
     />
 
-    <meta name="robots" content="index, follow" />
+    <meta
+            name="keywords"
+            content="DSA practice, coding interview preparation, LeetCode alternative, brute force to optimal solutions, data structures and algorithms, array problems, algorithm practice, software engineer interview prep, FAANG interview questions, coding challenges, DSA problems with solutions, optimal solution explanation"
+    />
+
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="bingbot" content="index, follow" />
 
     <meta name="application-name" content="CodWP" />
+    <meta name="author" content="CodWP" />
+    <meta name="publisher" content="CodWP" />
 
+    <!-- Language & Geo Targeting (India + Global) -->
+    <meta http-equiv="content-language" content="en" />
+    <meta name="language" content="English" />
+    <meta name="geo.region" content="IN" />
+    <meta name="geo.placename" content="India" />
+
+    <!--
+      ⚠️ IMPORTANT: Replace ALL occurrences of "codeup-y3u0.onrender.com"
+      with your custom domain (e.g., codwp.com) once purchased.
+      Until then, keep the onrender.com URL so canonical stays valid.
+    -->
     <link
             rel="canonical"
             href="https://codeup-y3u0.onrender.com/"
     />
 
-    <!-- Google Site Name Structured Data -->
+    <!-- Alternate language (add more as you translate) -->
+    <link rel="alternate" hreflang="en" href="https://codeup-y3u0.onrender.com/" />
+    <link rel="alternate" hreflang="x-default" href="https://codeup-y3u0.onrender.com/" />
+
+    <!-- ============================================================
+         STRUCTURED DATA — WebSite + Organization + SearchAction
+         (Gives Google sitelinks search box + brand knowledge panel)
+         ============================================================ -->
     <script type="application/ld+json">
         {
             "@context": "https://schema.org",
-            "@type": "WebSite",
-            "name": "CodWP",
-            "alternateName": "CodWP Coding Practice",
-            "url": "https://codeup-y3u0.onrender.com/"
+            "@graph": [
+                {
+                    "@type": "WebSite",
+                    "@id": "https://codeup-y3u0.onrender.com/#website",
+                    "url": "https://codeup-y3u0.onrender.com/",
+                    "name": "CodWP",
+                    "alternateName": ["CodWP Coding Practice", "CodWP DSA Platform", "CodWP Interview Prep"],
+                    "description": "Free DSA practice platform with Brute Force, Better, and Optimal solutions for every coding problem. Prepare for coding interviews at LeetCode, FAANG, and top IT companies.",
+                    "inLanguage": "en",
+                    "publisher": { "@id": "https://codeup-y3u0.onrender.com/#organization" },
+                    "potentialAction": {
+                        "@type": "SearchAction",
+                        "target": {
+                            "@type": "EntryPoint",
+                            "urlTemplate": "https://codeup-y3u0.onrender.com/search?q={search_term_string}"
+                        },
+                        "query-input": "required name=search_term_string"
+                    }
+                },
+                {
+                    "@type": "Organization",
+                    "@id": "https://codeup-y3u0.onrender.com/#organization",
+                    "name": "CodWP",
+                    "url": "https://codeup-y3u0.onrender.com/",
+                    "logo": {
+                        "@type": "ImageObject",
+                        "url": "https://codeup-y3u0.onrender.com/og-image.png",
+                        "width": 1200,
+                        "height": 630
+                    },
+                    "sameAs": [
+                        "https://twitter.com/codwp",
+                        "https://www.linkedin.com/company/codwp",
+                        "https://github.com/codwp"
+                    ]
+                },
+                {
+                    "@type": "WebPage",
+                    "@id": "https://codeup-y3u0.onrender.com/#webpage",
+                    "url": "https://codeup-y3u0.onrender.com/",
+                    "name": "CodWP — DSA Practice & Coding Interview Preparation",
+                    "isPartOf": { "@id": "https://codeup-y3u0.onrender.com/#website" },
+                    "about": { "@id": "https://codeup-y3u0.onrender.com/#organization" },
+                    "description": "Practice DSA with unique Brute Force → Better → Optimal solution explanations. Crack coding interviews.",
+                    "inLanguage": "en"
+                },
+                {
+                    "@type": "EducationalOrganization",
+                    "@id": "https://codeup-y3u0.onrender.com/#eduorg",
+                    "name": "CodWP",
+                    "url": "https://codeup-y3u0.onrender.com/",
+                    "description": "Online DSA practice platform for coding interview preparation.",
+                    "areaServed": "Worldwide"
+                }
+            ]
         }
     </script>
 
-    <!-- Open Graph / Social Sharing -->
+    <!-- ============================================================
+         OPEN GRAPH / SOCIAL SHARING
+         ============================================================ -->
     <meta property="og:type" content="website" />
-
     <meta property="og:site_name" content="CodWP" />
-
     <meta
             property="og:title"
-            content="CodWP - Free Coding Practice & DSA Interview Preparation"
+            content="CodWP — DSA Practice with Brute Force → Better → Optimal Solutions"
     />
-
     <meta
             property="og:description"
-            content="Solve coding problems, practice data structures and algorithms, track your progress, and prepare for technical interviews with CodWP."
+            content="The only DSA platform that explains every problem in 3 approaches: Brute Force, Better, and Optimal. Practice arrays, algorithms, and crack coding interviews."
     />
-
     <meta
             property="og:url"
             content="https://codeup-y3u0.onrender.com/"
     />
-
     <meta
             property="og:image"
             content="https://codeup-y3u0.onrender.com/og-image.png"
     />
-
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta
             property="og:image:alt"
-            content="CodWP - Coding Practice and Interview Preparation"
+            content="CodWP — DSA Practice and Coding Interview Preparation Platform"
     />
-
     <meta property="og:locale" content="en_IN" />
+    <meta property="og:locale:alternate" content="en_US" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-
+    <meta name="twitter:site" content="@codwp" />
+    <meta name="twitter:creator" content="@codwp" />
     <meta
             name="twitter:title"
-            content="CodWP - Free Coding Practice & DSA Interview Preparation"
+            content="CodWP — DSA Practice & Coding Interview Prep"
     />
-
     <meta
             name="twitter:description"
-            content="Practice DSA, solve coding challenges, and prepare for technical interviews with CodWP."
+            content="Brute Force → Better → Optimal solutions for every DSA problem. The most complete DSA practice platform."
     />
-
     <meta
             name="twitter:image"
             content="https://codeup-y3u0.onrender.com/og-image.png"
     />
+    <meta
+            name="twitter:image:alt"
+            content="CodWP — DSA Practice Platform"
+    />
 
-    <!-- Google Search Console Verification -->
+    <!-- ============================================================
+         VERIFICATION
+         ============================================================ -->
     <meta
             name="google-site-verification"
             content="sqXQ66xE8BVLNJaubZAFEVP-8-VCMb7oYoCN3R3s7KM"
     />
+    <!-- Add Bing / Yandex / Pinterest verification here after signup -->
+    <!-- <meta name="msvalidate.01" content="YOUR_BING_CODE" /> -->
 
-    <!-- Fonts -->
+    <!-- ============================================================
+         PERFORMANCE HINTS
+         ============================================================ -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com" />
+    <link rel="dns-prefetch" href="https://ap.emergent.sh" />
 
     <link
-            rel="preconnect"
-            href="https://fonts.gstatic.com"
-            crossorigin
-    />
-
-    <link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
             rel="stylesheet"
     />
 
-    <!-- Favicon -->
-    <link
-            rel="icon"
-            href="%PUBLIC_URL%/favicon.ico?v=2"
-    />
+    <!-- Favicon (NOTE: %PUBLIC_URL% is replaced by CRA during build) -->
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico?v=2" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
 
     <!-- Web App Manifest -->
-    <link
-            rel="manifest"
-            href="%PUBLIC_URL%/manifest.json"
-    />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- Preserve existing error handling -->
+    <!-- ============================================================
+         PRESERVE EXISTING ERROR HANDLER
+         ============================================================ -->
     <script>
         window.addEventListener(
             "error",
@@ -140,95 +220,74 @@
         );
     </script>
 
-    <!-- Google AdSense -->
+    <!-- ============================================================
+         GOOGLE ADSENSE
+         ============================================================ -->
     <script
             async
             src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7876001158724288"
             crossorigin="anonymous"
     ></script>
 
-    <!-- Existing Emergent script intentionally remains disabled -->
-    <!--
-    <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
-    -->
+    <!-- Emergent script intentionally disabled -->
 </head>
 
 <body>
 <noscript>
-    You need to enable JavaScript to run this app.
+    <div style="max-width:800px;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif;">
+        <h1>CodWP — DSA Practice & Coding Interview Preparation</h1>
+        <p>
+            CodWP is the only platform offering <strong>Brute Force → Better → Optimal</strong>
+            solutions for every Data Structures and Algorithms (DSA) problem. Practice arrays,
+            linked lists, trees, graphs, dynamic programming, and crack coding interviews at
+            LeetCode, GeeksforGeeks, FAANG, and top IT companies.
+        </p>
+        <p>Please enable JavaScript to use the interactive coding practice platform.</p>
+    </div>
 </noscript>
 
 <div id="root"></div>
 
-<!-- Existing PostHog Analytics -->
+<!-- ============================================================
+     POSTHOG ANALYTICS — PRESERVED
+     ============================================================ -->
 <script>
     !(function (t, e) {
         var o, n, p, r;
-
         e.__SV ||
         ((window.posthog = e),
             (e._i = []),
             (e.init = function (i, s, a) {
                 function g(t, e) {
                     var o = e.split(".");
-                    2 == o.length &&
-                    ((t = t[o[0]]), (e = o[1]));
-
+                    2 == o.length && ((t = t[o[0]]), (e = o[1]));
                     t[e] = function () {
-                        t.push(
-                            [e].concat(
-                                Array.prototype.slice.call(
-                                    arguments,
-                                    0
-                                )
-                            )
-                        );
+                        t.push([e].concat(Array.prototype.slice.call(arguments, 0)));
                     };
                 }
-
                 p = t.createElement("script");
                 p.type = "text/javascript";
                 p.crossOrigin = "anonymous";
                 p.async = !0;
-
-                p.src =
-                    s.api_host.replace(
-                        ".i.posthog.com",
-                        "-assets.i.posthog.com"
-                    ) + "/static/array.js";
-
+                p.src = s.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") + "/static/array.js";
                 r = t.getElementsByTagName("script")[0];
                 r.parentNode.insertBefore(p, r);
-
                 var u = e;
-
                 for (
-                    void 0 !== a
-                        ? (u = e[a] = [])
-                        : (a = "posthog"),
+                    void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
                         u.people = u.people || [],
                         u.toString = function (t) {
                             var e = "posthog";
-
                             "posthog" !== a && (e += "." + a);
                             t || (e += " (stub)");
-
                             return e;
                         },
-                        u.people.toString = function () {
-                            return u.toString(1) + ".people (stub)";
-                        },
-                        o =
-                            "init me ws ys ps bs capture je Di ks register register_once register_for_session unregister unregister_for_session Ps getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded renderSurvey canRenderSurvey canRenderSurveyAsync identify setPersonProperties group resetGroups setGroupPropertiesForFlags resetPersonPropertiesForFlags reset resetGroups get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out".split(
-                                " "
-                            ),
+                        u.people.toString = function () { return u.toString(1) + ".people (stub)"; },
+                        o = "init me ws ys ps bs capture je Di ks register register_once register_for_session unregister unregister_for_session Ps getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded renderSurvey canRenderSurvey canRenderSurveyAsync identify setPersonProperties group resetGroups setGroupPropertiesForFlags resetPersonPropertiesForFlags reset resetGroups get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out".split(" "),
                         n = 0;
                     n < o.length;
                     n++
-                ) {
-                    g(u, o[n]);
-                }
-
+                ) { g(u, o[n]); }
                 e._i.push([i, s, a]);
             }),
             (e.__SV = 1));
