@@ -83,7 +83,7 @@ public class Notifier {
             assertSafe(html);
             Map<String, Object> payload = Map.of("to", List.of(u.getString("email")), "subject", subject, "html", html, "from_name", brand);
             HttpRequest req = HttpRequest.newBuilder(URI.create(EMAIL_BASE_URL + "/api/v1/email/send"))
-                    .header("X-Email-Key", env("EMERGENT_EMAIL_KEY")).header("Content-Type", "application/json")
+                    .header("X-Email-Key", env("MJ_APIKEY_PUBLIC")).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(om.writeValueAsString(payload))).build();
             HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
             log(u, "email", kind, u.getString("email"), r.statusCode() < 300 ? "sent" : "failed", r.statusCode() < 300 ? null : r.body());
@@ -109,7 +109,7 @@ public class Notifier {
             assertSafe(html);
             Map<String, Object> payload = Map.of("to", List.of(u.getString("email")), "subject", subject, "html", html, "from_name", env("EMAIL_FROM_NAME"));
             HttpRequest req = HttpRequest.newBuilder(URI.create(EMAIL_BASE_URL + "/api/v1/email/send"))
-                    .header("X-Email-Key", env("EMERGENT_EMAIL_KEY")).header("Content-Type", "application/json")
+                    .header("X-Email-Key", env("MJ_APIKEY_PRIVATE")).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(om.writeValueAsString(payload))).build();
             HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
             log(u, "email", kind, u.getString("email"), r.statusCode() < 300 ? "sent" : "failed", r.statusCode() < 300 ? null : r.body());
