@@ -15,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -38,10 +39,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.parse(token);
             String userId = claims.getSubject();
-            String role   = claims.get("role", String.class); // ★ Role extract kiya
+            String role   = claims.get("role", String.class);
             String email  = claims.get("email", String.class);
 
-            // Spring ko ROLE_ prefix chahiye hota hai hasRole() ke liye
             List<SimpleGrantedAuthority> authorities =
                     role == null ? List.of()
                             : List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
@@ -53,9 +53,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                             authorities);
 
             SecurityContextHolder.getContext().setAuthentication(auth);
-        } catch (Exception ignored) {
-            // invalid token → unauthenticated
-            log.error("JWT Verification FAILED: {}", ignored.getMessage());
+
+            log.debug("JWT OK: user={}, role={}", userId, role);
+        } catch (Exception e) {
+            // Invalid/expired token → continue unauthenticated
+            // (Login endpoints still work, protected endpoints will return 401/403)
+            log.warn("JWT verification failed: {}", e.getMessage());
         }
 
         chain.doFilter(req, res);

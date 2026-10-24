@@ -212,14 +212,22 @@ public class LeetCodeAdminService {
     }
 
     private volatile Map<Integer, String> slugCache = null;
+    private final Object cacheLock = new Object();
 
     private String slugForNumber(int num) throws Exception {
+        // 1. Check cache first
+        Map<Integer, String> cache = slugCache;
+        if (cache != null && cache.containsKey(num)) {
+            return cache.get(num);
+        }
+
+        // 2. Try search
         try {
             JsonNode r = graphql("""
-                query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
-                    categorySlug:"", limit:20, skip:0, filters:$f){ 
-                    questions:data{frontendQuestionId titleSlug} 
-                }}""",
+            query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
+                categorySlug:"", limit:20, skip:0, filters:$f){ 
+                questions:data{frontendQuestionId titleSlug} 
+            }}""",
                     "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
 
             JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
@@ -235,13 +243,13 @@ public class LeetCodeAdminService {
             log.warn("Search failed for #{}: {}", num, e.getMessage());
         }
 
-        log.info("Building full slug cache for #{}", num);
-        Map<Integer, String> cache = slugCache;
-        if (cache == null || cache.isEmpty()) {
-            cache = buildSlugCache();
-            slugCache = cache;
+        // 3. Build full cache (proper field: questionFrontendId, not frontendQuestionId)
+        synchronized (cacheLock) {
+            if (slugCache == null || slugCache.isEmpty()) {
+                slugCache = buildSlugCache();
+            }
+            return slugCache.get(num);
         }
-        return cache.get(num);
     }
 
     private Map<Integer, String> buildSlugCache() throws Exception {
@@ -251,17 +259,18 @@ public class LeetCodeAdminService {
 
         while (true) {
             JsonNode r = graphql("""
-                query($skip:Int!, $limit:Int!){problemsetQuestionList:questionList(
-                    categorySlug:"", limit:$limit, skip:$skip, filters:{}){ 
-                    questions:data{frontendQuestionId titleSlug} 
-                }}""",
+            query($skip:Int!, $limit:Int!){problemsetQuestionList:questionList(
+                categorySlug:"", limit:$limit, skip:$skip, filters:{}){ 
+                questions:data{questionFrontendId titleSlug} 
+            }}""",
                     "{\"skip\":" + skip + ",\"limit\":" + limit + "}");
 
             JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
             if (!qs.isArray() || qs.size() == 0) break;
 
             for (JsonNode q : qs) {
-                String idStr = q.path("frontendQuestionId").asText("");
+                // ⚠️ Here field is "questionFrontendId" (NOT "frontendQuestionId")
+                String idStr = q.path("questionFrontendId").asText("");
                 String slug = q.path("titleSlug").asText("");
                 if (!idStr.isEmpty() && !slug.isEmpty()) {
                     try { map.put(Integer.parseInt(idStr), slug); } catch (Exception ignored) {}
@@ -276,7 +285,6 @@ public class LeetCodeAdminService {
         log.info("Built slug cache with {} problems", map.size());
         return map;
     }
-
     private JsonNode graphql(String query, String vars) throws Exception {
         ObjectNode body = MAPPER.createObjectNode();
         body.put("query", query);
@@ -285,7 +293,7 @@ public class LeetCodeAdminService {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(GRAPHQL))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .header("Referer", "https://leetcode.com/")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
 
@@ -312,6 +320,7 @@ public class LeetCodeAdminService {
         String ret = "";
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
 
+        // ═══════════ STEP 1: Parse function signature from codeSnippets ═══════════
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
             JsonNode jsSnippet = null;
@@ -326,14 +335,15 @@ public class LeetCodeAdminService {
 
             String code = jsSnippet.path("code").asText("");
 
+            // Match: "var fnName = function(arg1, arg2) {" OR "const fnName = (arg1, arg2) =>"
             Pattern jsPattern = Pattern.compile(
-                    "(?:var|let|const)\\s+(\\w+)\\s*=\\s*function\\s*\\(([^)]*)\\)",
+                    "(?:var|let|const)\\s+(\\w+)\\s*=\\s*(?:function\\s*\\(([^)]*)\\)|\\(([^)]*)\\)\\s*=>)",
                     Pattern.DOTALL
             );
             Matcher m = jsPattern.matcher(code);
             if (m.find()) {
                 fn = m.group(1).trim();
-                String argsStr = m.group(2).trim();
+                String argsStr = (m.group(2) != null ? m.group(2) : m.group(3)).trim();
                 if (!argsStr.isEmpty()) {
                     for (String arg : argsStr.split(",")) {
                         String argName = arg.trim();
@@ -344,6 +354,7 @@ public class LeetCodeAdminService {
                 }
             }
 
+            // Return type from JSDoc: /** @return {boolean} */
             Pattern retPattern = Pattern.compile("@return\\s*\\{([^}]+)\\}");
             Matcher rm = retPattern.matcher(code);
             if (rm.find()) {
@@ -351,6 +362,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 2: Override with metaData (if available) ═══════════
         try {
             String metaDataStr = d.path("metaData").asText("");
             if (!metaDataStr.isEmpty()) {
@@ -375,6 +387,7 @@ public class LeetCodeAdminService {
             log.warn("metaData parse failed for #{}: {}", num, e.getMessage());
         }
 
+        // ═══════════ STEP 3: Parse sampleTests from description HTML ═══════════
         String description = d.path("content").asText("");
         if (!description.isEmpty()) {
             String text = description
@@ -408,6 +421,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 4: Fallback — sampleTestCase ═══════════
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -426,6 +440,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 5: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 

@@ -14,20 +14,29 @@ import java.util.Map;
 @Service
 public class JwtService {
 
-    // ✅ Directly Render ke environment variable se lega, aur agar na mile toh fallback
-    // Note: Secret key kam se kam 32 characters ki honi chahiye
-    @Value("${JWT_SECRET:default-secret-key-must-be-at-least-32-chars-long}")
+    // ✅ 64-char secret = HS512 (best security)
+    @Value("${JWT_SECRET:a623da0cb27a86d780a8d0a3dc64e1462b993dd5a20090472af2c883a39beaeb}")
     private String secret;
 
-    @Value("${JWT_EXPIRY_MS:604800000}") // 7 days default
+    @Value("${JWT_EXPIRY_MS:604800000}") // 7 days
     private long expiryMs;
 
     private SecretKey key() {
-        // Agar key 32 characters se chhoti hai, toh error aayega. Isliye ensure karein ki Render par lambi key ho.
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            throw new IllegalArgumentException("JWT_SECRET must be at least 32 characters long for HS256");
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "❌ JWT_SECRET is missing! Set env var JWT_SECRET (min 32 chars, 64 recommended for HS512)."
+            );
         }
+
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+
+        if (keyBytes.length < 32) {
+            throw new IllegalStateException(
+                    "❌ JWT_SECRET too short! Current: " + keyBytes.length + " chars. " +
+                            "Minimum 32 chars required (64+ for HS512)."
+            );
+        }
+
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

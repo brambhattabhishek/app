@@ -1,170 +1,1101 @@
-[
-{"id":17,"slug":"single-number","title":"Single Number","difficulty":"Easy","tags":["Array","Bit Manipulation"],"acceptance":72.4,"companies":["Amazon","Google","Apple"],"fn":"singleNumber","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given a non-empty array of integers <code>nums</code>, every element appears <em>twice</em> except for one. Find that single one.</p><p>You must implement a solution with linear runtime and constant extra space.</p>",
-"constraints":["1 <= nums.length <= 3 * 10^4","Each element appears twice except for one element which appears once."],
-"hints":["What is x XOR x? What is x XOR 0?","XOR all numbers together — pairs cancel out."],"edgeCases":["Single element array","Negative numbers","Zero as the answer"],"explanation":"Constant space rules out a hash map. XOR is commutative so order doesn't matter.",
-"sampleTests":[{"input":"[2,2,1]","expected":"1"},{"input":"[4,1,2,1,2]","expected":"4"},{"input":"[1]","expected":"1"}],
-"hiddenTests":[{"input":"[-1,-1,-2]","expected":"-2"},{"input":"[0,3,3]","expected":"0"},{"input":"[7,9,7]","expected":"9"}],
-"editorial":{"approach":"XOR every element. Duplicates cancel (a^a = 0) leaving the unique value.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def singleNumber(self, nums: List[int]) -> int:\n        r = 0\n        for x in nums:\n            r ^= x\n        return r\n"}},
-{"id":18,"slug":"majority-element","title":"Majority Element","difficulty":"Easy","tags":["Array","Hash Table","Sorting"],"acceptance":65.1,"companies":["Amazon","Google","Adobe","Microsoft"],"fn":"majorityElement","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given an array <code>nums</code> of size <code>n</code>, return the majority element — the element that appears more than <code>⌊n / 2⌋</code> times. You may assume it always exists.</p>",
-"constraints":["1 <= n <= 5 * 10^4","-10^9 <= nums[i] <= 10^9"],
-"hints":["Sorting puts the majority at index n/2.","Boyer-Moore voting: keep a candidate and a counter."],"edgeCases":["Single element","Negative majority"],"explanation":"More than half means it outlives every other element in a pairwise cancel-out.",
-"sampleTests":[{"input":"[3,2,3]","expected":"3"},{"input":"[2,2,1,1,1,2,2]","expected":"2"}],
-"hiddenTests":[{"input":"[1]","expected":"1"},{"input":"[6,5,5]","expected":"5"},{"input":"[-1,-1,2]","expected":"-1"}],
-"editorial":{"approach":"Boyer-Moore voting: when count hits 0 pick the current element as candidate; +1 for equal, -1 otherwise.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def majorityElement(self, nums: List[int]) -> int:\n        cand, cnt = None, 0\n        for x in nums:\n            if cnt == 0:\n                cand = x\n            cnt += 1 if x == cand else -1\n        return cand\n"}},
-{"id":19,"slug":"missing-number","title":"Missing Number","difficulty":"Easy","tags":["Array","Math","Bit Manipulation"],"acceptance":68.0,"companies":["Amazon","Microsoft","Meta"],"fn":"missingNumber","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given an array <code>nums</code> containing <code>n</code> distinct numbers in the range <code>[0, n]</code>, return the only number in the range that is missing from the array.</p>",
-"constraints":["n == nums.length","1 <= n <= 10^4","All numbers are unique."],
-"hints":["The sum 0 + 1 + … + n is n(n+1)/2.","Subtract the actual sum."],"edgeCases":["Missing number is 0","Missing number is n"],"explanation":"The range has n+1 values but the array only n, so exactly one is absent.",
-"sampleTests":[{"input":"[3,0,1]","expected":"2"},{"input":"[0,1]","expected":"2"},{"input":"[9,6,4,2,3,5,7,0,1]","expected":"8"}],
-"hiddenTests":[{"input":"[0]","expected":"1"},{"input":"[1]","expected":"0"},{"input":"[1,2]","expected":"0"}],
-"editorial":{"approach":"Expected sum minus actual sum (or XOR indices with values).","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def missingNumber(self, nums: List[int]) -> int:\n        n = len(nums)\n        return n * (n + 1) // 2 - sum(nums)\n"}},
-{"id":20,"slug":"move-zeroes","title":"Move Zeroes","difficulty":"Easy","tags":["Array","Two Pointers"],"acceptance":61.9,"companies":["Meta","Amazon","Microsoft","Apple"],"fn":"moveZeroes","params":[{"name":"nums","type":"int[]"}],"ret":"int[]",
-"description":"<p>Given an integer array <code>nums</code>, move all <code>0</code>'s to the end while maintaining the relative order of the non-zero elements. Do it in-place and <strong>return</strong> the modified array.</p>",
-"constraints":["1 <= nums.length <= 10^4","-2^31 <= nums[i] <= 2^31 - 1"],
-"hints":["Keep a write pointer for the next non-zero position.","After copying all non-zeros forward, fill the rest with zeros."],"edgeCases":["No zeros","All zeros","Zeros already at the end"],"explanation":"Relative order of non-zero values must not change, so you can't just sort.",
-"sampleTests":[{"input":"[0,1,0,3,12]","expected":"[1,3,12,0,0]"},{"input":"[0]","expected":"[0]"}],
-"hiddenTests":[{"input":"[1,2]","expected":"[1,2]"},{"input":"[0,0,1]","expected":"[1,0,0]"},{"input":"[4,0,5,0,0,6]","expected":"[4,5,6,0,0,0]"}],
-"editorial":{"approach":"Two pointers: swap each non-zero element into the write position.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def moveZeroes(self, nums: List[int]) -> List[int]:\n        w = 0\n        for i in range(len(nums)):\n            if nums[i] != 0:\n                nums[w], nums[i] = nums[i], nums[w]\n                w += 1\n        return nums\n"}},
-{"id":21,"slug":"plus-one","title":"Plus One","difficulty":"Easy","tags":["Array","Math"],"acceptance":46.2,"companies":["Google","Amazon"],"fn":"plusOne","params":[{"name":"digits","type":"int[]"}],"ret":"int[]",
-"description":"<p>You are given a large integer represented as an array <code>digits</code>, most significant digit first. Increment the integer by one and return the resulting array of digits.</p>",
-"constraints":["1 <= digits.length <= 100","0 <= digits[i] <= 9","No leading zeros except the number 0 itself."],
-"hints":["Walk from the last digit; a 9 becomes 0 and carries.","If every digit was 9 you need one extra leading 1."],"edgeCases":["All nines like [9,9,9]","Single zero [0]"],"explanation":"The number can have 100 digits, so converting to an int would overflow in most languages.",
-"sampleTests":[{"input":"[1,2,3]","expected":"[1,2,4]"},{"input":"[4,3,2,1]","expected":"[4,3,2,2]"},{"input":"[9]","expected":"[1,0]"}],
-"hiddenTests":[{"input":"[9,9,9]","expected":"[1,0,0,0]"},{"input":"[0]","expected":"[1]"},{"input":"[1,9]","expected":"[2,0]"}],
-"editorial":{"approach":"Simulate carry from the right; return early once a digit < 9 is incremented.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def plusOne(self, digits: List[int]) -> List[int]:\n        for i in range(len(digits) - 1, -1, -1):\n            if digits[i] < 9:\n                digits[i] += 1\n                return digits\n            digits[i] = 0\n        return [1] + digits\n"}},
-{"id":22,"slug":"valid-palindrome","title":"Valid Palindrome","difficulty":"Easy","tags":["String","Two Pointers"],"acceptance":49.3,"companies":["Meta","Microsoft","Amazon","Apple"],"fn":"isPalindrome","params":[{"name":"s","type":"string"}],"ret":"bool",
-"description":"<p>A phrase is a <strong>palindrome</strong> if, after converting all uppercase letters into lowercase and removing all non-alphanumeric characters, it reads the same forward and backward.</p><p>Given a string <code>s</code>, return <code>true</code> if it is a palindrome.</p>",
-"constraints":["1 <= s.length <= 2 * 10^5","s consists only of printable ASCII characters."],
-"hints":["Use two pointers from both ends, skipping non-alphanumeric characters.","Compare characters case-insensitively."],"edgeCases":["String with only spaces/punctuation → true","Digits vs letters like \"0P\"","Underscore is not alphanumeric"],"explanation":"Only letters and digits count; everything else is ignored.",
-"sampleTests":[{"input":"\"A man, a plan, a canal: Panama\"","expected":"true"},{"input":"\"race a car\"","expected":"false"},{"input":"\" \"","expected":"true"}],
-"hiddenTests":[{"input":"\"0P\"","expected":"false"},{"input":"\"ab_a\"","expected":"true"},{"input":"\"Madam\"","expected":"true"}],
-"editorial":{"approach":"Filter to lowercase alphanumerics, compare with its reverse (or two pointers for O(1) space).","complexity":"Time O(n) · Space O(1) with two pointers","code":"class Solution:\n    def isPalindrome(self, s: str) -> bool:\n        t = [c.lower() for c in s if c.isalnum()]\n        return t == t[::-1]\n"}},
-{"id":23,"slug":"reverse-integer","title":"Reverse Integer","difficulty":"Medium","tags":["Math"],"acceptance":29.5,"companies":["Apple","Bloomberg","Amazon","Adobe"],"fn":"reverse","params":[{"name":"x","type":"int"}],"ret":"int",
-"description":"<p>Given a signed 32-bit integer <code>x</code>, return <code>x</code> with its digits reversed. If reversing causes the value to go outside the signed 32-bit range <code>[-2^31, 2^31 - 1]</code>, return <code>0</code>.</p>",
-"constraints":["-2^31 <= x <= 2^31 - 1"],
-"hints":["Pop the last digit with x % 10 and push it onto the result.","Before pushing, check whether result * 10 + digit would overflow."],"edgeCases":["Trailing zeros like 120 → 21","Overflow like 1534236469 → 0","-2^31"],"explanation":"Assume your environment can't store 64-bit integers; detect overflow before it happens.",
-"sampleTests":[{"input":"123","expected":"321"},{"input":"-123","expected":"-321"},{"input":"120","expected":"21"}],
-"hiddenTests":[{"input":"0","expected":"0"},{"input":"1534236469","expected":"0"},{"input":"-2147483648","expected":"0"},{"input":"1463847412","expected":"2147483641"}],
-"editorial":{"approach":"Reverse digits, then verify the result is within 32-bit bounds.","complexity":"Time O(log x) · Space O(1)","code":"class Solution:\n    def reverse(self, x: int) -> int:\n        s = -1 if x < 0 else 1\n        r = s * int(str(abs(x))[::-1])\n        return r if -2**31 <= r <= 2**31 - 1 else 0\n"}},
-{"id":24,"slug":"roman-to-integer","title":"Roman to Integer","difficulty":"Easy","tags":["String","Hash Table","Math"],"acceptance":63.4,"companies":["Amazon","Microsoft","Apple","Bloomberg"],"fn":"romanToInt","params":[{"name":"s","type":"string"}],"ret":"int",
-"description":"<p>Roman numerals use <code>I=1, V=5, X=10, L=50, C=100, D=500, M=1000</code>. A smaller symbol before a larger one is subtracted (e.g. <code>IV = 4</code>, <code>CM = 900</code>). Given a roman numeral, convert it to an integer.</p>",
-"constraints":["1 <= s.length <= 15","s is a valid roman numeral in the range [1, 3999]."],
-"hints":["If a symbol is smaller than the one after it, subtract it; otherwise add it."],"edgeCases":["Subtractive pairs IV, IX, XL, XC, CD, CM","Maximum 3999"],"explanation":"Scan left to right comparing each value with the next one.",
-"sampleTests":[{"input":"\"III\"","expected":"3"},{"input":"\"LVIII\"","expected":"58"},{"input":"\"MCMXCIV\"","expected":"1994"}],
-"hiddenTests":[{"input":"\"IV\"","expected":"4"},{"input":"\"IX\"","expected":"9"},{"input":"\"XL\"","expected":"40"},{"input":"\"MMMCMXCIX\"","expected":"3999"}],
-"editorial":{"approach":"Map symbols to values; subtract when the next symbol is larger.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def romanToInt(self, s: str) -> int:\n        v = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}\n        r = 0\n        for i, c in enumerate(s):\n            if i + 1 < len(s) and v[c] < v[s[i + 1]]:\n                r -= v[c]\n            else:\n                r += v[c]\n        return r\n"}},
-{"id":25,"slug":"power-of-two","title":"Power of Two","difficulty":"Easy","tags":["Math","Bit Manipulation"],"acceptance":48.0,"companies":["Amazon","Apple"],"fn":"isPowerOfTwo","params":[{"name":"n","type":"int"}],"ret":"bool",
-"description":"<p>Given an integer <code>n</code>, return <code>true</code> if it is a power of two. Otherwise, return <code>false</code>.</p>",
-"constraints":["-2^31 <= n <= 2^31 - 1"],
-"hints":["A power of two has exactly one set bit.","n & (n - 1) clears the lowest set bit."],"edgeCases":["0 and negative numbers → false","1 = 2^0 → true"],"explanation":"Can you solve it without loops or recursion? Bit tricks give O(1).",
-"sampleTests":[{"input":"1","expected":"true"},{"input":"16","expected":"true"},{"input":"3","expected":"false"}],
-"hiddenTests":[{"input":"0","expected":"false"},{"input":"-16","expected":"false"},{"input":"1073741824","expected":"true"},{"input":"6","expected":"false"}],
-"editorial":{"approach":"n > 0 and n & (n - 1) == 0.","complexity":"Time O(1) · Space O(1)","code":"class Solution:\n    def isPowerOfTwo(self, n: int) -> bool:\n        return n > 0 and n & (n - 1) == 0\n"}},
-{"id":26,"slug":"largest-rectangle-in-histogram","title":"Largest Rectangle in Histogram","difficulty":"Hard","tags":["Array","Stack","Monotonic Stack"],"acceptance":45.8,"companies":["Amazon","Google","Microsoft","Bloomberg"],"fn":"largestRectangleArea","params":[{"name":"heights","type":"int[]"}],"ret":"int",
-"description":"<p>Given an array of integers <code>heights</code> representing the histogram's bar heights where each bar's width is <code>1</code>, return the area of the largest rectangle in the histogram.</p>",
-"constraints":["1 <= heights.length <= 10^5","0 <= heights[i] <= 10^4"],
-"hints":["For each bar, find how far it can extend left and right while bars are at least as tall.","A monotonic increasing stack finds those boundaries in one pass."],"edgeCases":["Single bar","All equal heights","Strictly decreasing heights"],"explanation":"The rectangle's height is limited by its shortest bar. Every bar is the shortest of some maximal rectangle.",
-"sampleTests":[{"input":"[2,1,5,6,2,3]","expected":"10"},{"input":"[2,4]","expected":"4"}],
-"hiddenTests":[{"input":"[1]","expected":"1"},{"input":"[2,2,2]","expected":"6"},{"input":"[6,2,5,4,5,1,6]","expected":"12"},{"input":"[5,4,3,2,1]","expected":"9"}],
-"editorial":{"approach":"Monotonic stack of indices; when a shorter bar arrives, pop and compute the area of the popped bar extending to the current index.","complexity":"Time O(n) · Space O(n)","code":"class Solution:\n    def largestRectangleArea(self, heights: List[int]) -> int:\n        st, best = [], 0\n        for i, h in enumerate(heights + [0]):\n            while st and heights[st[-1]] >= h:\n                top = st.pop()\n                left = st[-1] + 1 if st else 0\n                best = max(best, heights[top] * (i - left))\n            st.append(i)\n        return best\n"}},
-{"id":27,"slug":"house-robber","title":"House Robber","difficulty":"Medium","tags":["Array","Dynamic Programming"],"acceptance":51.2,"companies":["Amazon","Google","Microsoft","Cisco"],"fn":"rob","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>You are a robber planning to rob houses along a street. Adjacent houses have connected security systems, so you cannot rob two adjacent houses. Given <code>nums</code> (money in each house), return the maximum amount you can rob.</p>",
-"constraints":["1 <= nums.length <= 100","0 <= nums[i] <= 400"],
-"hints":["At each house choose: rob it (plus best up to i-2) or skip it (best up to i-1).","You only need the last two DP values."],"edgeCases":["Single house","Skipping two houses in a row is sometimes optimal like [2,1,1,2]"],"explanation":"dp[i] = max(dp[i-1], dp[i-2] + nums[i]).",
-"sampleTests":[{"input":"[1,2,3,1]","expected":"4"},{"input":"[2,7,9,3,1]","expected":"12"}],
-"hiddenTests":[{"input":"[5]","expected":"5"},{"input":"[2,1,1,2]","expected":"4"},{"input":"[0,0]","expected":"0"}],
-"editorial":{"approach":"Rolling DP with two variables.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def rob(self, nums: List[int]) -> int:\n        a = b = 0\n        for x in nums:\n            a, b = b, max(b, a + x)\n        return b\n"}},
-{"id":28,"slug":"coin-change","title":"Coin Change","difficulty":"Medium","tags":["Array","Dynamic Programming","Breadth-First Search"],"acceptance":44.6,"companies":["Amazon","Google","Microsoft","Goldman Sachs"],"fn":"coinChange","params":[{"name":"coins","type":"int[]"},{"name":"amount","type":"int"}],"ret":"int",
-"description":"<p>You are given coin denominations <code>coins</code> and a total <code>amount</code>. Return the fewest number of coins needed to make up that amount, or <code>-1</code> if it cannot be made. You have an infinite number of each coin.</p>",
-"constraints":["1 <= coins.length <= 12","1 <= coins[i] <= 2^31 - 1","0 <= amount <= 10^4"],
-"hints":["Greedy (largest coin first) fails for some coin systems.","dp[a] = 1 + min(dp[a - c]) over coins c ≤ a."],"edgeCases":["amount = 0 → 0","Impossible amount → -1","Very large coin values"],"explanation":"Unbounded knapsack minimising count. Build answers for every amount from 0 up.",
-"sampleTests":[{"input":"[1,2,5]\n11","expected":"3"},{"input":"[2]\n3","expected":"-1"},{"input":"[1]\n0","expected":"0"}],
-"hiddenTests":[{"input":"[1]\n2","expected":"2"},{"input":"[186,419,83,408]\n6249","expected":"20"},{"input":"[2,5,10,1]\n27","expected":"4"}],
-"editorial":{"approach":"Bottom-up DP over amounts.","complexity":"Time O(amount · coins) · Space O(amount)","code":"class Solution:\n    def coinChange(self, coins: List[int], amount: int) -> int:\n        INF = amount + 1\n        dp = [0] + [INF] * amount\n        for a in range(1, amount + 1):\n            for c in coins:\n                if c <= a and dp[a - c] + 1 < dp[a]:\n                    dp[a] = dp[a - c] + 1\n        return dp[amount] if dp[amount] != INF else -1\n"}},
-{"id":29,"slug":"longest-increasing-subsequence","title":"Longest Increasing Subsequence","difficulty":"Medium","tags":["Array","Binary Search","Dynamic Programming"],"acceptance":56.3,"companies":["Google","Amazon","Microsoft","Meta"],"fn":"lengthOfLIS","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given an integer array <code>nums</code>, return the length of the longest <strong>strictly increasing subsequence</strong>.</p>",
-"constraints":["1 <= nums.length <= 2500","-10^4 <= nums[i] <= 10^4"],
-"hints":["O(n²): dp[i] = 1 + max(dp[j]) for j < i with nums[j] < nums[i].","O(n log n): keep tails[k] = smallest tail of an increasing subsequence of length k+1, and binary search."],"edgeCases":["All equal → 1 (strictly increasing)","Already sorted","Single element"],"explanation":"A subsequence need not be contiguous, but order must be preserved.",
-"sampleTests":[{"input":"[10,9,2,5,3,7,101,18]","expected":"4"},{"input":"[0,1,0,3,2,3]","expected":"4"},{"input":"[7,7,7,7]","expected":"1"}],
-"hiddenTests":[{"input":"[1]","expected":"1"},{"input":"[4,10,4,3,8,9]","expected":"3"},{"input":"[1,3,6,7,9,4,10,5,6]","expected":"6"}],
-"editorial":{"approach":"Patience sorting with binary search on the tails array.","complexity":"Time O(n log n) · Space O(n)","code":"class Solution:\n    def lengthOfLIS(self, nums: List[int]) -> int:\n        tails = []\n        for x in nums:\n            i = bisect.bisect_left(tails, x)\n            if i == len(tails):\n                tails.append(x)\n            else:\n                tails[i] = x\n        return len(tails)\n"}},
-{"id":30,"slug":"find-minimum-in-rotated-sorted-array","title":"Find Minimum in Rotated Sorted Array","difficulty":"Medium","tags":["Array","Binary Search"],"acceptance":52.0,"companies":["Amazon","Microsoft","Meta","Bloomberg"],"fn":"findMin","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>An ascending array of unique elements was rotated between <code>1</code> and <code>n</code> times. Given the rotated array <code>nums</code>, return its minimum element in <code>O(log n)</code> time.</p>",
-"constraints":["1 <= n <= 5000","All integers of nums are unique."],
-"hints":["Compare nums[mid] with nums[right].","If nums[mid] > nums[right], the minimum is to the right of mid."],"edgeCases":["Not rotated (rotated n times)","Two elements","Single element"],"explanation":"The minimum is the rotation point — the only place where order breaks.",
-"sampleTests":[{"input":"[3,4,5,1,2]","expected":"1"},{"input":"[4,5,6,7,0,1,2]","expected":"0"},{"input":"[11,13,15,17]","expected":"11"}],
-"hiddenTests":[{"input":"[2,1]","expected":"1"},{"input":"[1]","expected":"1"},{"input":"[5,1,2,3,4]","expected":"1"}],
-"editorial":{"approach":"Binary search narrowing toward the rotation point.","complexity":"Time O(log n) · Space O(1)","code":"class Solution:\n    def findMin(self, nums: List[int]) -> int:\n        l, r = 0, len(nums) - 1\n        while l < r:\n            m = (l + r) // 2\n            if nums[m] > nums[r]:\n                l = m + 1\n            else:\n                r = m\n        return nums[l]\n"}},
-{"id":31,"slug":"search-in-rotated-sorted-array","title":"Search in Rotated Sorted Array","difficulty":"Medium","tags":["Array","Binary Search"],"acceptance":42.1,"companies":["Amazon","Meta","Microsoft","Google","LinkedIn"],"fn":"search","params":[{"name":"nums","type":"int[]"},{"name":"target","type":"int"}],"ret":"int",
-"description":"<p>Given a possibly rotated ascending array <code>nums</code> of distinct values and an integer <code>target</code>, return the index of <code>target</code> or <code>-1</code> if it is not present. Your algorithm must run in <code>O(log n)</code>.</p>",
-"constraints":["1 <= nums.length <= 5000","All values of nums are unique."],
-"hints":["At any mid, at least one half [l..mid] or [mid..r] is sorted.","Check whether target lies inside the sorted half; if so search there, else the other half."],"edgeCases":["Target at index 0","Target missing","Two-element arrays"],"explanation":"Modified binary search — decide which side is sorted at every step.",
-"sampleTests":[{"input":"[4,5,6,7,0,1,2]\n0","expected":"4"},{"input":"[4,5,6,7,0,1,2]\n3","expected":"-1"},{"input":"[1]\n0","expected":"-1"}],
-"hiddenTests":[{"input":"[1]\n1","expected":"0"},{"input":"[3,1]\n1","expected":"1"},{"input":"[5,1,3]\n5","expected":"0"},{"input":"[6,7,1,2,3,4,5]\n6","expected":"0"}],
-"editorial":{"approach":"Binary search, choosing the sorted half each iteration.","complexity":"Time O(log n) · Space O(1)","code":"class Solution:\n    def search(self, nums: List[int], target: int) -> int:\n        l, r = 0, len(nums) - 1\n        while l <= r:\n            m = (l + r) // 2\n            if nums[m] == target:\n                return m\n            if nums[l] <= nums[m]:\n                if nums[l] <= target < nums[m]:\n                    r = m - 1\n                else:\n                    l = m + 1\n            else:\n                if nums[m] < target <= nums[r]:\n                    l = m + 1\n                else:\n                    r = m - 1\n        return -1\n"}},
-{"id":32,"slug":"unique-paths","title":"Unique Paths","difficulty":"Medium","tags":["Math","Dynamic Programming","Combinatorics"],"acceptance":65.7,"companies":["Google","Amazon","Bloomberg"],"fn":"uniquePaths","params":[{"name":"m","type":"int"},{"name":"n","type":"int"}],"ret":"int",
-"description":"<p>A robot on an <code>m x n</code> grid starts at the top-left corner and can only move <strong>down</strong> or <strong>right</strong>. How many unique paths lead to the bottom-right corner?</p>",
-"constraints":["1 <= m, n <= 100","The answer is <= 2 * 10^9."],
-"hints":["Paths to a cell = paths from above + paths from the left.","Or count arrangements: choose which (m-1) of the (m+n-2) moves are 'down'."],"edgeCases":["1 x 1 grid → 1","Single row or column → 1"],"explanation":"Grid DP or the binomial coefficient C(m+n-2, m-1).",
-"sampleTests":[{"input":"3\n7","expected":"28"},{"input":"3\n2","expected":"3"}],
-"hiddenTests":[{"input":"1\n1","expected":"1"},{"input":"7\n3","expected":"28"},{"input":"10\n10","expected":"48620"},{"input":"23\n12","expected":"193536720"}],
-"editorial":{"approach":"1-D DP row: row[j] += row[j-1].","complexity":"Time O(m·n) · Space O(n)","code":"class Solution:\n    def uniquePaths(self, m: int, n: int) -> int:\n        row = [1] * n\n        for _ in range(1, m):\n            for j in range(1, n):\n                row[j] += row[j - 1]\n        return row[-1]\n"}},
-{"id":33,"slug":"decode-ways","title":"Decode Ways","difficulty":"Medium","tags":["String","Dynamic Programming"],"acceptance":35.4,"companies":["Meta","Google","Amazon","Microsoft"],"fn":"numDecodings","params":[{"name":"s","type":"string"}],"ret":"int",
-"description":"<p>A message of letters is encoded with <code>'A' → \"1\"</code> … <code>'Z' → \"26\"</code>. Given a string <code>s</code> of digits, return the number of ways to decode it.</p>",
-"constraints":["1 <= s.length <= 100","s contains only digits and may contain leading zero(s)."],
-"hints":["A single digit is decodable if it's 1-9; a pair if it's 10-26.","dp[i] = (dp[i-1] if s[i-1] valid) + (dp[i-2] if s[i-2:i] valid)."],"edgeCases":["Leading zero → 0","\"10\" and \"20\" must pair","\"06\" is not valid"],"explanation":"Like climbing stairs, but each step is only allowed when the digits form a valid code.",
-"sampleTests":[{"input":"\"12\"","expected":"2"},{"input":"\"226\"","expected":"3"},{"input":"\"06\"","expected":"0"}],
-"hiddenTests":[{"input":"\"0\"","expected":"0"},{"input":"\"10\"","expected":"1"},{"input":"\"11106\"","expected":"2"},{"input":"\"2101\"","expected":"1"}],
-"editorial":{"approach":"Rolling DP with two previous counts.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def numDecodings(self, s: str) -> int:\n        a, b = 1, 1 if s[0] != '0' else 0\n        for i in range(1, len(s)):\n            c = b if s[i] != '0' else 0\n            if 10 <= int(s[i - 1:i + 1]) <= 26:\n                c += a\n            a, b = b, c\n        return b\n"}},
-{"id":34,"slug":"palindromic-substrings","title":"Palindromic Substrings","difficulty":"Medium","tags":["String","Two Pointers","Dynamic Programming"],"acceptance":71.0,"companies":["Meta","Amazon","Microsoft"],"fn":"countSubstrings","params":[{"name":"s","type":"string"}],"ret":"int",
-"description":"<p>Given a string <code>s</code>, return the number of <strong>palindromic substrings</strong> in it. Substrings at different positions count separately even if they are equal.</p>",
-"constraints":["1 <= s.length <= 1000","s consists of lowercase English letters."],
-"hints":["Every palindrome has a center — either a character or a gap between two characters.","Expand around each of the 2n-1 centers."],"edgeCases":["All same characters like \"aaa\" → 6","Single character"],"explanation":"Count occurrences, not distinct palindromes.",
-"sampleTests":[{"input":"\"abc\"","expected":"3"},{"input":"\"aaa\"","expected":"6"}],
-"hiddenTests":[{"input":"\"a\"","expected":"1"},{"input":"\"abba\"","expected":"6"},{"input":"\"racecar\"","expected":"10"}],
-"editorial":{"approach":"Expand around centers.","complexity":"Time O(n²) · Space O(1)","code":"class Solution:\n    def countSubstrings(self, s: str) -> int:\n        n, r = len(s), 0\n        for c in range(2 * n - 1):\n            l, h = c // 2, c // 2 + c % 2\n            while l >= 0 and h < n and s[l] == s[h]:\n                r += 1\n                l -= 1\n                h += 1\n        return r\n"}},
-{"id":35,"slug":"sqrtx","title":"Sqrt(x)","difficulty":"Easy","tags":["Math","Binary Search"],"acceptance":39.8,"companies":["Amazon","Apple","Bloomberg"],"fn":"mySqrt","params":[{"name":"x","type":"int"}],"ret":"int",
-"description":"<p>Given a non-negative integer <code>x</code>, return the square root of <code>x</code> rounded down to the nearest integer. You must not use any built-in exponent function or operator.</p>",
-"constraints":["0 <= x <= 2^31 - 1"],
-"hints":["Binary search the answer in [0, x].","Careful: mid * mid can overflow 32-bit integers — use long or compare mid with x / mid."],"edgeCases":["x = 0 or 1","Large x near 2^31 - 1","Non-perfect squares round down"],"explanation":"Find the largest k such that k² ≤ x.",
-"sampleTests":[{"input":"4","expected":"2"},{"input":"8","expected":"2"}],
-"hiddenTests":[{"input":"0","expected":"0"},{"input":"1","expected":"1"},{"input":"2147395599","expected":"46339"},{"input":"15","expected":"3"}],
-"editorial":{"approach":"Binary search on k with k*k <= x.","complexity":"Time O(log x) · Space O(1)","code":"class Solution:\n    def mySqrt(self, x: int) -> int:\n        l, r = 0, x\n        while l < r:\n            m = (l + r + 1) // 2\n            if m * m <= x:\n                l = m\n            else:\n                r = m - 1\n        return l\n"}},
-{"id":36,"slug":"longest-consecutive-sequence","title":"Longest Consecutive Sequence","difficulty":"Medium","tags":["Array","Hash Table","Union Find"],"acceptance":47.3,"companies":["Google","Amazon","Meta","Microsoft"],"fn":"longestConsecutive","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given an unsorted array of integers <code>nums</code>, return the length of the longest consecutive elements sequence. You must write an algorithm that runs in <code>O(n)</code> time.</p>",
-"constraints":["0 <= nums.length <= 10^5","-10^9 <= nums[i] <= 10^9"],
-"hints":["Put everything in a hash set.","Only start counting from numbers x where x - 1 is NOT in the set."],"edgeCases":["Empty array → 0","Duplicates like [1,2,0,1]","Negative numbers"],"explanation":"Sorting gives O(n log n); the set trick makes each number part of exactly one scan.",
-"sampleTests":[{"input":"[100,4,200,1,3,2]","expected":"4"},{"input":"[0,3,7,2,5,8,4,6,0,1]","expected":"9"}],
-"hiddenTests":[{"input":"[]","expected":"0"},{"input":"[1,2,0,1]","expected":"3"},{"input":"[9]","expected":"1"}],
-"editorial":{"approach":"Hash set; extend sequences only from their starting element.","complexity":"Time O(n) · Space O(n)","code":"class Solution:\n    def longestConsecutive(self, nums: List[int]) -> int:\n        s, best = set(nums), 0\n        for x in s:\n            if x - 1 not in s:\n                y = x\n                while y + 1 in s:\n                    y += 1\n                best = max(best, y - x + 1)\n        return best\n"}},
-{"id":37,"slug":"subarray-sum-equals-k","title":"Subarray Sum Equals K","difficulty":"Medium","tags":["Array","Hash Table","Prefix Sum"],"acceptance":44.5,"companies":["Meta","Google","Amazon","Microsoft"],"fn":"subarraySum","params":[{"name":"nums","type":"int[]"},{"name":"k","type":"int"}],"ret":"int",
-"description":"<p>Given an array of integers <code>nums</code> and an integer <code>k</code>, return the total number of contiguous subarrays whose sum equals <code>k</code>.</p>",
-"constraints":["1 <= nums.length <= 2 * 10^4","-1000 <= nums[i] <= 1000","-10^7 <= k <= 10^7"],
-"hints":["sum(i..j) = prefix[j] - prefix[i-1].","Count how many earlier prefix sums equal currentPrefix - k using a hash map."],"edgeCases":["Negative numbers (sliding window doesn't work)","k = 0","Subarray starting at index 0 — seed the map with {0: 1}"],"explanation":"Because values can be negative, two pointers fail; prefix sums + hash map give O(n).",
-"sampleTests":[{"input":"[1,1,1]\n2","expected":"2"},{"input":"[1,2,3]\n3","expected":"2"}],
-"hiddenTests":[{"input":"[1]\n0","expected":"0"},{"input":"[1,-1,0]\n0","expected":"3"},{"input":"[3,4,7,2,-3,1,4,2]\n7","expected":"4"}],
-"editorial":{"approach":"Running prefix sum with a frequency map.","complexity":"Time O(n) · Space O(n)","code":"class Solution:\n    def subarraySum(self, nums: List[int], k: int) -> int:\n        cnt = {0: 1}\n        s = r = 0\n        for x in nums:\n            s += x\n            r += cnt.get(s - k, 0)\n            cnt[s] = cnt.get(s, 0) + 1\n        return r\n"}},
-{"id":38,"slug":"kth-largest-element-in-an-array","title":"Kth Largest Element in an Array","difficulty":"Medium","tags":["Array","Sorting","Heap (Priority Queue)"],"acceptance":67.2,"companies":["Meta","Amazon","Microsoft","LinkedIn","Spotify"],"fn":"findKthLargest","params":[{"name":"nums","type":"int[]"},{"name":"k","type":"int"}],"ret":"int",
-"description":"<p>Given an integer array <code>nums</code> and an integer <code>k</code>, return the <code>k<sup>th</sup></code> largest element in the array (in sorted order, not the k<sup>th</sup> distinct element).</p>",
-"constraints":["1 <= k <= nums.length <= 10^5","-10^4 <= nums[i] <= 10^4"],
-"hints":["Keep a min-heap of size k; its top is the answer.","Quickselect gives average O(n)."],"edgeCases":["Duplicates count separately","k = n → minimum","k = 1 → maximum"],"explanation":"Can you solve it without fully sorting?",
-"sampleTests":[{"input":"[3,2,1,5,6,4]\n2","expected":"5"},{"input":"[3,2,3,1,2,4,5,5,6]\n4","expected":"4"}],
-"hiddenTests":[{"input":"[1]\n1","expected":"1"},{"input":"[2,1]\n2","expected":"1"},{"input":"[7,7,7]\n2","expected":"7"}],
-"editorial":{"approach":"Min-heap of size k.","complexity":"Time O(n log k) · Space O(k)","code":"class Solution:\n    def findKthLargest(self, nums: List[int], k: int) -> int:\n        return heapq.nlargest(k, nums)[-1]\n"}},
-{"id":39,"slug":"first-missing-positive","title":"First Missing Positive","difficulty":"Hard","tags":["Array","Hash Table"],"acceptance":39.9,"companies":["Amazon","Google","Microsoft","Meta"],"fn":"firstMissingPositive","params":[{"name":"nums","type":"int[]"}],"ret":"int",
-"description":"<p>Given an unsorted integer array <code>nums</code>, return the smallest positive integer that is not present. You must implement an algorithm that runs in <code>O(n)</code> time and uses <code>O(1)</code> auxiliary space.</p>",
-"constraints":["1 <= nums.length <= 10^5","-2^31 <= nums[i] <= 2^31 - 1"],
-"hints":["The answer is always in [1, n + 1].","Place each value v in 1..n at index v-1 by swapping (cyclic sort); then scan for the first mismatch."],"edgeCases":["No positives → 1","Duplicates like [1,1]","Values larger than n are ignored"],"explanation":"Using the array itself as a hash table satisfies the O(1) space requirement.",
-"sampleTests":[{"input":"[1,2,0]","expected":"3"},{"input":"[3,4,-1,1]","expected":"2"},{"input":"[7,8,9,11,12]","expected":"1"}],
-"hiddenTests":[{"input":"[1]","expected":"2"},{"input":"[2]","expected":"1"},{"input":"[1,1]","expected":"2"}],
-"editorial":{"approach":"Cyclic sort values into their slots, then find the first index i with nums[i] != i + 1.","complexity":"Time O(n) · Space O(1)","code":"class Solution:\n    def firstMissingPositive(self, nums: List[int]) -> int:\n        n = len(nums)\n        for i in range(n):\n            while 1 <= nums[i] <= n and nums[nums[i] - 1] != nums[i]:\n                j = nums[i] - 1\n                nums[i], nums[j] = nums[j], nums[i]\n        for i in range(n):\n            if nums[i] != i + 1:\n                return i + 1\n        return n + 1\n"}},
-{"id":40,"slug":"longest-valid-parentheses","title":"Longest Valid Parentheses","difficulty":"Hard","tags":["String","Stack","Dynamic Programming"],"acceptance":35.1,"companies":["Amazon","Google","Microsoft","Uber"],"fn":"longestValidParentheses","params":[{"name":"s","type":"string"}],"ret":"int",
-"description":"<p>Given a string containing just the characters <code>'('</code> and <code>')'</code>, return the length of the longest valid (well-formed) parentheses <strong>substring</strong>.</p>",
-"constraints":["0 <= s.length <= 3 * 10^4","s[i] is '(' or ')'."],
-"hints":["Push indices on a stack, seeded with -1 as a base.","On ')', pop; if the stack becomes empty push the current index as the new base, else the length is i - stack.top."],"edgeCases":["Empty string → 0","Only opening brackets","Nested and adjacent valid parts like \"()(())\""],"explanation":"The substring must be contiguous and balanced. The base index marks where the last invalid position was.",
-"sampleTests":[{"input":"\"(()\"","expected":"2"},{"input":"\")()())\"","expected":"4"},{"input":"\"\"","expected":"0"}],
-"hiddenTests":[{"input":"\"()(()\"","expected":"2"},{"input":"\"()(())\"","expected":"6"},{"input":"\"((((\"","expected":"0"}],
-"editorial":{"approach":"Index stack with a sentinel base.","complexity":"Time O(n) · Space O(n)","code":"class Solution:\n    def longestValidParentheses(self, s: str) -> int:\n        st, best = [-1], 0\n        for i, c in enumerate(s):\n            if c == '(':\n                st.append(i)\n            else:\n                st.pop()\n                if not st:\n                    st.append(i)\n                else:\n                    best = max(best, i - st[-1])\n        return best\n"}}
-]
+[ {
+  "id" : 17,
+  "slug" : "single-number",
+  "title" : "Single Number",
+  "difficulty" : "Easy",
+  "tags" : [ "Array", "Bit Manipulation" ],
+  "acceptance" : 72.4,
+  "companies" : [ "Amazon", "Google", "Apple" ],
+  "fn" : "singleNumber",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a non-empty array of integers <code>nums</code>, every element appears <em>twice</em> except for one. Find that single one.</p><p>You must implement a solution with linear runtime and constant extra space.</p>",
+  "constraints" : [ "1 <= nums.length <= 3 * 10^4", "Each element appears twice except for one element which appears once." ],
+  "hints" : [ "What is x XOR x? What is x XOR 0?", "XOR all numbers together — pairs cancel out." ],
+  "edgeCases" : [ "Single element array", "Negative numbers", "Zero as the answer" ],
+  "explanation" : "Constant space rules out a hash map. XOR is commutative so order doesn't matter.",
+  "sampleTests" : [ {
+    "input" : "[2,2,1]",
+    "expected" : "1"
+  }, {
+    "input" : "[4,1,2,1,2]",
+    "expected" : "4"
+  }, {
+    "input" : "[1]",
+    "expected" : "1"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[-1,-1,-2]",
+    "expected" : "-2"
+  }, {
+    "input" : "[0,3,3]",
+    "expected" : "0"
+  }, {
+    "input" : "[7,9,7]",
+    "expected" : "9"
+  } ],
+  "editorial" : {
+    "approach" : "XOR every element. Duplicates cancel (a^a = 0) leaving the unique value.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def singleNumber(self, nums: List[int]) -> int:\n        r = 0\n        for x in nums:\n            r ^= x\n        return r\n"
+  }
+}, {
+  "id" : 18,
+  "slug" : "majority-element",
+  "title" : "Majority Element",
+  "difficulty" : "Easy",
+  "tags" : [ "Array", "Hash Table", "Sorting" ],
+  "acceptance" : 65.1,
+  "companies" : [ "Amazon", "Google", "Adobe", "Microsoft" ],
+  "fn" : "majorityElement",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an array <code>nums</code> of size <code>n</code>, return the majority element — the element that appears more than <code>⌊n / 2⌋</code> times. You may assume it always exists.</p>",
+  "constraints" : [ "1 <= n <= 5 * 10^4", "-10^9 <= nums[i] <= 10^9" ],
+  "hints" : [ "Sorting puts the majority at index n/2.", "Boyer-Moore voting: keep a candidate and a counter." ],
+  "edgeCases" : [ "Single element", "Negative majority" ],
+  "explanation" : "More than half means it outlives every other element in a pairwise cancel-out.",
+  "sampleTests" : [ {
+    "input" : "[3,2,3]",
+    "expected" : "3"
+  }, {
+    "input" : "[2,2,1,1,1,2,2]",
+    "expected" : "2"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]",
+    "expected" : "1"
+  }, {
+    "input" : "[6,5,5]",
+    "expected" : "5"
+  }, {
+    "input" : "[-1,-1,2]",
+    "expected" : "-1"
+  } ],
+  "editorial" : {
+    "approach" : "Boyer-Moore voting: when count hits 0 pick the current element as candidate; +1 for equal, -1 otherwise.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def majorityElement(self, nums: List[int]) -> int:\n        cand, cnt = None, 0\n        for x in nums:\n            if cnt == 0:\n                cand = x\n            cnt += 1 if x == cand else -1\n        return cand\n"
+  }
+}, {
+  "id" : 19,
+  "slug" : "missing-number",
+  "title" : "Missing Number",
+  "difficulty" : "Easy",
+  "tags" : [ "Array", "Math", "Bit Manipulation" ],
+  "acceptance" : 68.0,
+  "companies" : [ "Amazon", "Microsoft", "Meta" ],
+  "fn" : "missingNumber",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an array <code>nums</code> containing <code>n</code> distinct numbers in the range <code>[0, n]</code>, return the only number in the range that is missing from the array.</p>",
+  "constraints" : [ "n == nums.length", "1 <= n <= 10^4", "All numbers are unique." ],
+  "hints" : [ "The sum 0 + 1 + … + n is n(n+1)/2.", "Subtract the actual sum." ],
+  "edgeCases" : [ "Missing number is 0", "Missing number is n" ],
+  "explanation" : "The range has n+1 values but the array only n, so exactly one is absent.",
+  "sampleTests" : [ {
+    "input" : "[3,0,1]",
+    "expected" : "2"
+  }, {
+    "input" : "[0,1]",
+    "expected" : "2"
+  }, {
+    "input" : "[9,6,4,2,3,5,7,0,1]",
+    "expected" : "8"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[0]",
+    "expected" : "1"
+  }, {
+    "input" : "[1]",
+    "expected" : "0"
+  }, {
+    "input" : "[1,2]",
+    "expected" : "0"
+  } ],
+  "editorial" : {
+    "approach" : "Expected sum minus actual sum (or XOR indices with values).",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def missingNumber(self, nums: List[int]) -> int:\n        n = len(nums)\n        return n * (n + 1) // 2 - sum(nums)\n"
+  }
+}, {
+  "id" : 20,
+  "slug" : "move-zeroes",
+  "title" : "Move Zeroes",
+  "difficulty" : "Easy",
+  "tags" : [ "Array", "Two Pointers" ],
+  "acceptance" : 61.9,
+  "companies" : [ "Meta", "Amazon", "Microsoft", "Apple" ],
+  "fn" : "moveZeroes",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int[]",
+  "description" : "<p>Given an integer array <code>nums</code>, move all <code>0</code>'s to the end while maintaining the relative order of the non-zero elements. Do it in-place and <strong>return</strong> the modified array.</p>",
+  "constraints" : [ "1 <= nums.length <= 10^4", "-2^31 <= nums[i] <= 2^31 - 1" ],
+  "hints" : [ "Keep a write pointer for the next non-zero position.", "After copying all non-zeros forward, fill the rest with zeros." ],
+  "edgeCases" : [ "No zeros", "All zeros", "Zeros already at the end" ],
+  "explanation" : "Relative order of non-zero values must not change, so you can't just sort.",
+  "sampleTests" : [ {
+    "input" : "[0,1,0,3,12]",
+    "expected" : "[1,3,12,0,0]"
+  }, {
+    "input" : "[0]",
+    "expected" : "[0]"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1,2]",
+    "expected" : "[1,2]"
+  }, {
+    "input" : "[0,0,1]",
+    "expected" : "[1,0,0]"
+  }, {
+    "input" : "[4,0,5,0,0,6]",
+    "expected" : "[4,5,6,0,0,0]"
+  } ],
+  "editorial" : {
+    "approach" : "Two pointers: swap each non-zero element into the write position.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def moveZeroes(self, nums: List[int]) -> List[int]:\n        w = 0\n        for i in range(len(nums)):\n            if nums[i] != 0:\n                nums[w], nums[i] = nums[i], nums[w]\n                w += 1\n        return nums\n"
+  }
+}, {
+  "id" : 21,
+  "slug" : "plus-one",
+  "title" : "Plus One",
+  "difficulty" : "Easy",
+  "tags" : [ "Array", "Math" ],
+  "acceptance" : 46.2,
+  "companies" : [ "Google", "Amazon" ],
+  "fn" : "plusOne",
+  "params" : [ {
+    "name" : "digits",
+    "type" : "int[]"
+  } ],
+  "ret" : "int[]",
+  "description" : "<p>You are given a large integer represented as an array <code>digits</code>, most significant digit first. Increment the integer by one and return the resulting array of digits.</p>",
+  "constraints" : [ "1 <= digits.length <= 100", "0 <= digits[i] <= 9", "No leading zeros except the number 0 itself." ],
+  "hints" : [ "Walk from the last digit; a 9 becomes 0 and carries.", "If every digit was 9 you need one extra leading 1." ],
+  "edgeCases" : [ "All nines like [9,9,9]", "Single zero [0]" ],
+  "explanation" : "The number can have 100 digits, so converting to an int would overflow in most languages.",
+  "sampleTests" : [ {
+    "input" : "[1,2,3]",
+    "expected" : "[1,2,4]"
+  }, {
+    "input" : "[4,3,2,1]",
+    "expected" : "[4,3,2,2]"
+  }, {
+    "input" : "[9]",
+    "expected" : "[1,0]"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[9,9,9]",
+    "expected" : "[1,0,0,0]"
+  }, {
+    "input" : "[0]",
+    "expected" : "[1]"
+  }, {
+    "input" : "[1,9]",
+    "expected" : "[2,0]"
+  } ],
+  "editorial" : {
+    "approach" : "Simulate carry from the right; return early once a digit < 9 is incremented.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def plusOne(self, digits: List[int]) -> List[int]:\n        for i in range(len(digits) - 1, -1, -1):\n            if digits[i] < 9:\n                digits[i] += 1\n                return digits\n            digits[i] = 0\n        return [1] + digits\n"
+  }
+}, {
+  "id" : 22,
+  "slug" : "valid-palindrome",
+  "title" : "Valid Palindrome",
+  "difficulty" : "Easy",
+  "tags" : [ "String", "Two Pointers" ],
+  "acceptance" : 49.3,
+  "companies" : [ "Meta", "Microsoft", "Amazon", "Apple" ],
+  "fn" : "isPalindrome",
+  "params" : [ {
+    "name" : "s",
+    "type" : "string"
+  } ],
+  "ret" : "bool",
+  "description" : "<p>A phrase is a <strong>palindrome</strong> if, after converting all uppercase letters into lowercase and removing all non-alphanumeric characters, it reads the same forward and backward.</p><p>Given a string <code>s</code>, return <code>true</code> if it is a palindrome.</p>",
+  "constraints" : [ "1 <= s.length <= 2 * 10^5", "s consists only of printable ASCII characters." ],
+  "hints" : [ "Use two pointers from both ends, skipping non-alphanumeric characters.", "Compare characters case-insensitively." ],
+  "edgeCases" : [ "String with only spaces/punctuation → true", "Digits vs letters like \"0P\"", "Underscore is not alphanumeric" ],
+  "explanation" : "Only letters and digits count; everything else is ignored.",
+  "sampleTests" : [ {
+    "input" : "\"A man, a plan, a canal: Panama\"",
+    "expected" : "true"
+  }, {
+    "input" : "\"race a car\"",
+    "expected" : "false"
+  }, {
+    "input" : "\" \"",
+    "expected" : "true"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "\"0P\"",
+    "expected" : "false"
+  }, {
+    "input" : "\"ab_a\"",
+    "expected" : "true"
+  }, {
+    "input" : "\"Madam\"",
+    "expected" : "true"
+  } ],
+  "editorial" : {
+    "approach" : "Filter to lowercase alphanumerics, compare with its reverse (or two pointers for O(1) space).",
+    "complexity" : "Time O(n) · Space O(1) with two pointers",
+    "code" : "class Solution:\n    def isPalindrome(self, s: str) -> bool:\n        t = [c.lower() for c in s if c.isalnum()]\n        return t == t[::-1]\n"
+  }
+}, {
+  "id" : 23,
+  "slug" : "reverse-integer",
+  "title" : "Reverse Integer",
+  "difficulty" : "Medium",
+  "tags" : [ "Math" ],
+  "acceptance" : 29.5,
+  "companies" : [ "Apple", "Bloomberg", "Amazon", "Adobe" ],
+  "fn" : "reverse",
+  "params" : [ {
+    "name" : "x",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a signed 32-bit integer <code>x</code>, return <code>x</code> with its digits reversed. If reversing causes the value to go outside the signed 32-bit range <code>[-2^31, 2^31 - 1]</code>, return <code>0</code>.</p>",
+  "constraints" : [ "-2^31 <= x <= 2^31 - 1" ],
+  "hints" : [ "Pop the last digit with x % 10 and push it onto the result.", "Before pushing, check whether result * 10 + digit would overflow." ],
+  "edgeCases" : [ "Trailing zeros like 120 → 21", "Overflow like 1534236469 → 0", "-2^31" ],
+  "explanation" : "Assume your environment can't store 64-bit integers; detect overflow before it happens.",
+  "sampleTests" : [ {
+    "input" : "123",
+    "expected" : "321"
+  }, {
+    "input" : "-123",
+    "expected" : "-321"
+  }, {
+    "input" : "120",
+    "expected" : "21"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "0",
+    "expected" : "0"
+  }, {
+    "input" : "1534236469",
+    "expected" : "0"
+  }, {
+    "input" : "-2147483648",
+    "expected" : "0"
+  }, {
+    "input" : "1463847412",
+    "expected" : "2147483641"
+  } ],
+  "editorial" : {
+    "approach" : "Reverse digits, then verify the result is within 32-bit bounds.",
+    "complexity" : "Time O(log x) · Space O(1)",
+    "code" : "class Solution:\n    def reverse(self, x: int) -> int:\n        s = -1 if x < 0 else 1\n        r = s * int(str(abs(x))[::-1])\n        return r if -2**31 <= r <= 2**31 - 1 else 0\n"
+  }
+}, {
+  "id" : 24,
+  "slug" : "roman-to-integer",
+  "title" : "Roman to Integer",
+  "difficulty" : "Easy",
+  "tags" : [ "String", "Hash Table", "Math" ],
+  "acceptance" : 63.4,
+  "companies" : [ "Amazon", "Microsoft", "Apple", "Bloomberg" ],
+  "fn" : "romanToInt",
+  "params" : [ {
+    "name" : "s",
+    "type" : "string"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Roman numerals use <code>I=1, V=5, X=10, L=50, C=100, D=500, M=1000</code>. A smaller symbol before a larger one is subtracted (e.g. <code>IV = 4</code>, <code>CM = 900</code>). Given a roman numeral, convert it to an integer.</p>",
+  "constraints" : [ "1 <= s.length <= 15", "s is a valid roman numeral in the range [1, 3999]." ],
+  "hints" : [ "If a symbol is smaller than the one after it, subtract it; otherwise add it." ],
+  "edgeCases" : [ "Subtractive pairs IV, IX, XL, XC, CD, CM", "Maximum 3999" ],
+  "explanation" : "Scan left to right comparing each value with the next one.",
+  "sampleTests" : [ {
+    "input" : "\"III\"",
+    "expected" : "3"
+  }, {
+    "input" : "\"LVIII\"",
+    "expected" : "58"
+  }, {
+    "input" : "\"MCMXCIV\"",
+    "expected" : "1994"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "\"IV\"",
+    "expected" : "4"
+  }, {
+    "input" : "\"IX\"",
+    "expected" : "9"
+  }, {
+    "input" : "\"XL\"",
+    "expected" : "40"
+  }, {
+    "input" : "\"MMMCMXCIX\"",
+    "expected" : "3999"
+  } ],
+  "editorial" : {
+    "approach" : "Map symbols to values; subtract when the next symbol is larger.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def romanToInt(self, s: str) -> int:\n        v = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}\n        r = 0\n        for i, c in enumerate(s):\n            if i + 1 < len(s) and v[c] < v[s[i + 1]]:\n                r -= v[c]\n            else:\n                r += v[c]\n        return r\n"
+  }
+}, {
+  "id" : 25,
+  "slug" : "power-of-two",
+  "title" : "Power of Two",
+  "difficulty" : "Easy",
+  "tags" : [ "Math", "Bit Manipulation" ],
+  "acceptance" : 48.0,
+  "companies" : [ "Amazon", "Apple" ],
+  "fn" : "isPowerOfTwo",
+  "params" : [ {
+    "name" : "n",
+    "type" : "int"
+  } ],
+  "ret" : "bool",
+  "description" : "<p>Given an integer <code>n</code>, return <code>true</code> if it is a power of two. Otherwise, return <code>false</code>.</p>",
+  "constraints" : [ "-2^31 <= n <= 2^31 - 1" ],
+  "hints" : [ "A power of two has exactly one set bit.", "n & (n - 1) clears the lowest set bit." ],
+  "edgeCases" : [ "0 and negative numbers → false", "1 = 2^0 → true" ],
+  "explanation" : "Can you solve it without loops or recursion? Bit tricks give O(1).",
+  "sampleTests" : [ {
+    "input" : "1",
+    "expected" : "true"
+  }, {
+    "input" : "16",
+    "expected" : "true"
+  }, {
+    "input" : "3",
+    "expected" : "false"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "0",
+    "expected" : "false"
+  }, {
+    "input" : "-16",
+    "expected" : "false"
+  }, {
+    "input" : "1073741824",
+    "expected" : "true"
+  }, {
+    "input" : "6",
+    "expected" : "false"
+  } ],
+  "editorial" : {
+    "approach" : "n > 0 and n & (n - 1) == 0.",
+    "complexity" : "Time O(1) · Space O(1)",
+    "code" : "class Solution:\n    def isPowerOfTwo(self, n: int) -> bool:\n        return n > 0 and n & (n - 1) == 0\n"
+  }
+}, {
+  "id" : 26,
+  "slug" : "largest-rectangle-in-histogram",
+  "title" : "Largest Rectangle in Histogram",
+  "difficulty" : "Hard",
+  "tags" : [ "Array", "Stack", "Monotonic Stack" ],
+  "acceptance" : 45.8,
+  "companies" : [ "Amazon", "Google", "Microsoft", "Bloomberg" ],
+  "fn" : "largestRectangleArea",
+  "params" : [ {
+    "name" : "heights",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an array of integers <code>heights</code> representing the histogram's bar heights where each bar's width is <code>1</code>, return the area of the largest rectangle in the histogram.</p>",
+  "constraints" : [ "1 <= heights.length <= 10^5", "0 <= heights[i] <= 10^4" ],
+  "hints" : [ "For each bar, find how far it can extend left and right while bars are at least as tall.", "A monotonic increasing stack finds those boundaries in one pass." ],
+  "edgeCases" : [ "Single bar", "All equal heights", "Strictly decreasing heights" ],
+  "explanation" : "The rectangle's height is limited by its shortest bar. Every bar is the shortest of some maximal rectangle.",
+  "sampleTests" : [ {
+    "input" : "[2,1,5,6,2,3]",
+    "expected" : "10"
+  }, {
+    "input" : "[2,4]",
+    "expected" : "4"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]",
+    "expected" : "1"
+  }, {
+    "input" : "[2,2,2]",
+    "expected" : "6"
+  }, {
+    "input" : "[6,2,5,4,5,1,6]",
+    "expected" : "12"
+  }, {
+    "input" : "[5,4,3,2,1]",
+    "expected" : "9"
+  } ],
+  "editorial" : {
+    "approach" : "Monotonic stack of indices; when a shorter bar arrives, pop and compute the area of the popped bar extending to the current index.",
+    "complexity" : "Time O(n) · Space O(n)",
+    "code" : "class Solution:\n    def largestRectangleArea(self, heights: List[int]) -> int:\n        st, best = [], 0\n        for i, h in enumerate(heights + [0]):\n            while st and heights[st[-1]] >= h:\n                top = st.pop()\n                left = st[-1] + 1 if st else 0\n                best = max(best, heights[top] * (i - left))\n            st.append(i)\n        return best\n"
+  }
+}, {
+  "id" : 27,
+  "slug" : "house-robber",
+  "title" : "House Robber",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Dynamic Programming" ],
+  "acceptance" : 51.2,
+  "companies" : [ "Amazon", "Google", "Microsoft", "Cisco" ],
+  "fn" : "rob",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>You are a robber planning to rob houses along a street. Adjacent houses have connected security systems, so you cannot rob two adjacent houses. Given <code>nums</code> (money in each house), return the maximum amount you can rob.</p>",
+  "constraints" : [ "1 <= nums.length <= 100", "0 <= nums[i] <= 400" ],
+  "hints" : [ "At each house choose: rob it (plus best up to i-2) or skip it (best up to i-1).", "You only need the last two DP values." ],
+  "edgeCases" : [ "Single house", "Skipping two houses in a row is sometimes optimal like [2,1,1,2]" ],
+  "explanation" : "dp[i] = max(dp[i-1], dp[i-2] + nums[i]).",
+  "sampleTests" : [ {
+    "input" : "[1,2,3,1]",
+    "expected" : "4"
+  }, {
+    "input" : "[2,7,9,3,1]",
+    "expected" : "12"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[5]",
+    "expected" : "5"
+  }, {
+    "input" : "[2,1,1,2]",
+    "expected" : "4"
+  }, {
+    "input" : "[0,0]",
+    "expected" : "0"
+  } ],
+  "editorial" : {
+    "approach" : "Rolling DP with two variables.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def rob(self, nums: List[int]) -> int:\n        a = b = 0\n        for x in nums:\n            a, b = b, max(b, a + x)\n        return b\n"
+  }
+}, {
+  "id" : 28,
+  "slug" : "coin-change",
+  "title" : "Coin Change",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Dynamic Programming", "Breadth-First Search" ],
+  "acceptance" : 44.6,
+  "companies" : [ "Amazon", "Google", "Microsoft", "Goldman Sachs" ],
+  "fn" : "coinChange",
+  "params" : [ {
+    "name" : "coins",
+    "type" : "int[]"
+  }, {
+    "name" : "amount",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>You are given coin denominations <code>coins</code> and a total <code>amount</code>. Return the fewest number of coins needed to make up that amount, or <code>-1</code> if it cannot be made. You have an infinite number of each coin.</p>",
+  "constraints" : [ "1 <= coins.length <= 12", "1 <= coins[i] <= 2^31 - 1", "0 <= amount <= 10^4" ],
+  "hints" : [ "Greedy (largest coin first) fails for some coin systems.", "dp[a] = 1 + min(dp[a - c]) over coins c ≤ a." ],
+  "edgeCases" : [ "amount = 0 → 0", "Impossible amount → -1", "Very large coin values" ],
+  "explanation" : "Unbounded knapsack minimising count. Build answers for every amount from 0 up.",
+  "sampleTests" : [ {
+    "input" : "[1,2,5]\n11",
+    "expected" : "3"
+  }, {
+    "input" : "[2]\n3",
+    "expected" : "-1"
+  }, {
+    "input" : "[1]\n0",
+    "expected" : "0"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]\n2",
+    "expected" : "2"
+  }, {
+    "input" : "[186,419,83,408]\n6249",
+    "expected" : "20"
+  }, {
+    "input" : "[2,5,10,1]\n27",
+    "expected" : "4"
+  } ],
+  "editorial" : {
+    "approach" : "Bottom-up DP over amounts.",
+    "complexity" : "Time O(amount · coins) · Space O(amount)",
+    "code" : "class Solution:\n    def coinChange(self, coins: List[int], amount: int) -> int:\n        INF = amount + 1\n        dp = [0] + [INF] * amount\n        for a in range(1, amount + 1):\n            for c in coins:\n                if c <= a and dp[a - c] + 1 < dp[a]:\n                    dp[a] = dp[a - c] + 1\n        return dp[amount] if dp[amount] != INF else -1\n"
+  }
+}, {
+  "id" : 29,
+  "slug" : "longest-increasing-subsequence",
+  "title" : "Longest Increasing Subsequence",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Binary Search", "Dynamic Programming" ],
+  "acceptance" : 56.3,
+  "companies" : [ "Google", "Amazon", "Microsoft", "Meta" ],
+  "fn" : "lengthOfLIS",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an integer array <code>nums</code>, return the length of the longest <strong>strictly increasing subsequence</strong>.</p>",
+  "constraints" : [ "1 <= nums.length <= 2500", "-10^4 <= nums[i] <= 10^4" ],
+  "hints" : [ "O(n²): dp[i] = 1 + max(dp[j]) for j < i with nums[j] < nums[i].", "O(n log n): keep tails[k] = smallest tail of an increasing subsequence of length k+1, and binary search." ],
+  "edgeCases" : [ "All equal → 1 (strictly increasing)", "Already sorted", "Single element" ],
+  "explanation" : "A subsequence need not be contiguous, but order must be preserved.",
+  "sampleTests" : [ {
+    "input" : "[10,9,2,5,3,7,101,18]",
+    "expected" : "4"
+  }, {
+    "input" : "[0,1,0,3,2,3]",
+    "expected" : "4"
+  }, {
+    "input" : "[7,7,7,7]",
+    "expected" : "1"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]",
+    "expected" : "1"
+  }, {
+    "input" : "[4,10,4,3,8,9]",
+    "expected" : "3"
+  }, {
+    "input" : "[1,3,6,7,9,4,10,5,6]",
+    "expected" : "6"
+  } ],
+  "editorial" : {
+    "approach" : "Patience sorting with binary search on the tails array.",
+    "complexity" : "Time O(n log n) · Space O(n)",
+    "code" : "class Solution:\n    def lengthOfLIS(self, nums: List[int]) -> int:\n        tails = []\n        for x in nums:\n            i = bisect.bisect_left(tails, x)\n            if i == len(tails):\n                tails.append(x)\n            else:\n                tails[i] = x\n        return len(tails)\n"
+  }
+}, {
+  "id" : 30,
+  "slug" : "find-minimum-in-rotated-sorted-array",
+  "title" : "Find Minimum in Rotated Sorted Array",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Binary Search" ],
+  "acceptance" : 52.0,
+  "companies" : [ "Amazon", "Microsoft", "Meta", "Bloomberg" ],
+  "fn" : "findMin",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>An ascending array of unique elements was rotated between <code>1</code> and <code>n</code> times. Given the rotated array <code>nums</code>, return its minimum element in <code>O(log n)</code> time.</p>",
+  "constraints" : [ "1 <= n <= 5000", "All integers of nums are unique." ],
+  "hints" : [ "Compare nums[mid] with nums[right].", "If nums[mid] > nums[right], the minimum is to the right of mid." ],
+  "edgeCases" : [ "Not rotated (rotated n times)", "Two elements", "Single element" ],
+  "explanation" : "The minimum is the rotation point — the only place where order breaks.",
+  "sampleTests" : [ {
+    "input" : "[3,4,5,1,2]",
+    "expected" : "1"
+  }, {
+    "input" : "[4,5,6,7,0,1,2]",
+    "expected" : "0"
+  }, {
+    "input" : "[11,13,15,17]",
+    "expected" : "11"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[2,1]",
+    "expected" : "1"
+  }, {
+    "input" : "[1]",
+    "expected" : "1"
+  }, {
+    "input" : "[5,1,2,3,4]",
+    "expected" : "1"
+  } ],
+  "editorial" : {
+    "approach" : "Binary search narrowing toward the rotation point.",
+    "complexity" : "Time O(log n) · Space O(1)",
+    "code" : "class Solution:\n    def findMin(self, nums: List[int]) -> int:\n        l, r = 0, len(nums) - 1\n        while l < r:\n            m = (l + r) // 2\n            if nums[m] > nums[r]:\n                l = m + 1\n            else:\n                r = m\n        return nums[l]\n"
+  }
+}, {
+  "id" : 31,
+  "slug" : "search-in-rotated-sorted-array",
+  "title" : "Search in Rotated Sorted Array",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Binary Search" ],
+  "acceptance" : 42.1,
+  "companies" : [ "Amazon", "Meta", "Microsoft", "Google", "LinkedIn" ],
+  "fn" : "search",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  }, {
+    "name" : "target",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a possibly rotated ascending array <code>nums</code> of distinct values and an integer <code>target</code>, return the index of <code>target</code> or <code>-1</code> if it is not present. Your algorithm must run in <code>O(log n)</code>.</p>",
+  "constraints" : [ "1 <= nums.length <= 5000", "All values of nums are unique." ],
+  "hints" : [ "At any mid, at least one half [l..mid] or [mid..r] is sorted.", "Check whether target lies inside the sorted half; if so search there, else the other half." ],
+  "edgeCases" : [ "Target at index 0", "Target missing", "Two-element arrays" ],
+  "explanation" : "Modified binary search — decide which side is sorted at every step.",
+  "sampleTests" : [ {
+    "input" : "[4,5,6,7,0,1,2]\n0",
+    "expected" : "4"
+  }, {
+    "input" : "[4,5,6,7,0,1,2]\n3",
+    "expected" : "-1"
+  }, {
+    "input" : "[1]\n0",
+    "expected" : "-1"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]\n1",
+    "expected" : "0"
+  }, {
+    "input" : "[3,1]\n1",
+    "expected" : "1"
+  }, {
+    "input" : "[5,1,3]\n5",
+    "expected" : "0"
+  }, {
+    "input" : "[6,7,1,2,3,4,5]\n6",
+    "expected" : "0"
+  } ],
+  "editorial" : {
+    "approach" : "Binary search, choosing the sorted half each iteration.",
+    "complexity" : "Time O(log n) · Space O(1)",
+    "code" : "class Solution:\n    def search(self, nums: List[int], target: int) -> int:\n        l, r = 0, len(nums) - 1\n        while l <= r:\n            m = (l + r) // 2\n            if nums[m] == target:\n                return m\n            if nums[l] <= nums[m]:\n                if nums[l] <= target < nums[m]:\n                    r = m - 1\n                else:\n                    l = m + 1\n            else:\n                if nums[m] < target <= nums[r]:\n                    l = m + 1\n                else:\n                    r = m - 1\n        return -1\n"
+  }
+}, {
+  "id" : 32,
+  "slug" : "unique-paths",
+  "title" : "Unique Paths",
+  "difficulty" : "Medium",
+  "tags" : [ "Math", "Dynamic Programming", "Combinatorics" ],
+  "acceptance" : 65.7,
+  "companies" : [ "Google", "Amazon", "Bloomberg" ],
+  "fn" : "uniquePaths",
+  "params" : [ {
+    "name" : "m",
+    "type" : "int"
+  }, {
+    "name" : "n",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>A robot on an <code>m x n</code> grid starts at the top-left corner and can only move <strong>down</strong> or <strong>right</strong>. How many unique paths lead to the bottom-right corner?</p>",
+  "constraints" : [ "1 <= m, n <= 100", "The answer is <= 2 * 10^9." ],
+  "hints" : [ "Paths to a cell = paths from above + paths from the left.", "Or count arrangements: choose which (m-1) of the (m+n-2) moves are 'down'." ],
+  "edgeCases" : [ "1 x 1 grid → 1", "Single row or column → 1" ],
+  "explanation" : "Grid DP or the binomial coefficient C(m+n-2, m-1).",
+  "sampleTests" : [ {
+    "input" : "3\n7",
+    "expected" : "28"
+  }, {
+    "input" : "3\n2",
+    "expected" : "3"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "1\n1",
+    "expected" : "1"
+  }, {
+    "input" : "7\n3",
+    "expected" : "28"
+  }, {
+    "input" : "10\n10",
+    "expected" : "48620"
+  }, {
+    "input" : "23\n12",
+    "expected" : "193536720"
+  } ],
+  "editorial" : {
+    "approach" : "1-D DP row: row[j] += row[j-1].",
+    "complexity" : "Time O(m·n) · Space O(n)",
+    "code" : "class Solution:\n    def uniquePaths(self, m: int, n: int) -> int:\n        row = [1] * n\n        for _ in range(1, m):\n            for j in range(1, n):\n                row[j] += row[j - 1]\n        return row[-1]\n"
+  }
+}, {
+  "id" : 33,
+  "slug" : "decode-ways",
+  "title" : "Decode Ways",
+  "difficulty" : "Medium",
+  "tags" : [ "String", "Dynamic Programming" ],
+  "acceptance" : 35.4,
+  "companies" : [ "Meta", "Google", "Amazon", "Microsoft" ],
+  "fn" : "numDecodings",
+  "params" : [ {
+    "name" : "s",
+    "type" : "string"
+  } ],
+  "ret" : "int",
+  "description" : "<p>A message of letters is encoded with <code>'A' → \"1\"</code> … <code>'Z' → \"26\"</code>. Given a string <code>s</code> of digits, return the number of ways to decode it.</p>",
+  "constraints" : [ "1 <= s.length <= 100", "s contains only digits and may contain leading zero(s)." ],
+  "hints" : [ "A single digit is decodable if it's 1-9; a pair if it's 10-26.", "dp[i] = (dp[i-1] if s[i-1] valid) + (dp[i-2] if s[i-2:i] valid)." ],
+  "edgeCases" : [ "Leading zero → 0", "\"10\" and \"20\" must pair", "\"06\" is not valid" ],
+  "explanation" : "Like climbing stairs, but each step is only allowed when the digits form a valid code.",
+  "sampleTests" : [ {
+    "input" : "\"12\"",
+    "expected" : "2"
+  }, {
+    "input" : "\"226\"",
+    "expected" : "3"
+  }, {
+    "input" : "\"06\"",
+    "expected" : "0"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "\"0\"",
+    "expected" : "0"
+  }, {
+    "input" : "\"10\"",
+    "expected" : "1"
+  }, {
+    "input" : "\"11106\"",
+    "expected" : "2"
+  }, {
+    "input" : "\"2101\"",
+    "expected" : "1"
+  } ],
+  "editorial" : {
+    "approach" : "Rolling DP with two previous counts.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def numDecodings(self, s: str) -> int:\n        a, b = 1, 1 if s[0] != '0' else 0\n        for i in range(1, len(s)):\n            c = b if s[i] != '0' else 0\n            if 10 <= int(s[i - 1:i + 1]) <= 26:\n                c += a\n            a, b = b, c\n        return b\n"
+  }
+}, {
+  "id" : 34,
+  "slug" : "palindromic-substrings",
+  "title" : "Palindromic Substrings",
+  "difficulty" : "Medium",
+  "tags" : [ "String", "Two Pointers", "Dynamic Programming" ],
+  "acceptance" : 71.0,
+  "companies" : [ "Meta", "Amazon", "Microsoft" ],
+  "fn" : "countSubstrings",
+  "params" : [ {
+    "name" : "s",
+    "type" : "string"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a string <code>s</code>, return the number of <strong>palindromic substrings</strong> in it. Substrings at different positions count separately even if they are equal.</p>",
+  "constraints" : [ "1 <= s.length <= 1000", "s consists of lowercase English letters." ],
+  "hints" : [ "Every palindrome has a center — either a character or a gap between two characters.", "Expand around each of the 2n-1 centers." ],
+  "edgeCases" : [ "All same characters like \"aaa\" → 6", "Single character" ],
+  "explanation" : "Count occurrences, not distinct palindromes.",
+  "sampleTests" : [ {
+    "input" : "\"abc\"",
+    "expected" : "3"
+  }, {
+    "input" : "\"aaa\"",
+    "expected" : "6"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "\"a\"",
+    "expected" : "1"
+  }, {
+    "input" : "\"abba\"",
+    "expected" : "6"
+  }, {
+    "input" : "\"racecar\"",
+    "expected" : "10"
+  } ],
+  "editorial" : {
+    "approach" : "Expand around centers.",
+    "complexity" : "Time O(n²) · Space O(1)",
+    "code" : "class Solution:\n    def countSubstrings(self, s: str) -> int:\n        n, r = len(s), 0\n        for c in range(2 * n - 1):\n            l, h = c // 2, c // 2 + c % 2\n            while l >= 0 and h < n and s[l] == s[h]:\n                r += 1\n                l -= 1\n                h += 1\n        return r\n"
+  }
+}, {
+  "id" : 35,
+  "slug" : "sqrtx",
+  "title" : "Sqrt(x)",
+  "difficulty" : "Easy",
+  "tags" : [ "Math", "Binary Search" ],
+  "acceptance" : 39.8,
+  "companies" : [ "Amazon", "Apple", "Bloomberg" ],
+  "fn" : "mySqrt",
+  "params" : [ {
+    "name" : "x",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a non-negative integer <code>x</code>, return the square root of <code>x</code> rounded down to the nearest integer. You must not use any built-in exponent function or operator.</p>",
+  "constraints" : [ "0 <= x <= 2^31 - 1" ],
+  "hints" : [ "Binary search the answer in [0, x].", "Careful: mid * mid can overflow 32-bit integers — use long or compare mid with x / mid." ],
+  "edgeCases" : [ "x = 0 or 1", "Large x near 2^31 - 1", "Non-perfect squares round down" ],
+  "explanation" : "Find the largest k such that k² ≤ x.",
+  "sampleTests" : [ {
+    "input" : "4",
+    "expected" : "2"
+  }, {
+    "input" : "8",
+    "expected" : "2"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "0",
+    "expected" : "0"
+  }, {
+    "input" : "1",
+    "expected" : "1"
+  }, {
+    "input" : "2147395599",
+    "expected" : "46339"
+  }, {
+    "input" : "15",
+    "expected" : "3"
+  } ],
+  "editorial" : {
+    "approach" : "Binary search on k with k*k <= x.",
+    "complexity" : "Time O(log x) · Space O(1)",
+    "code" : "class Solution:\n    def mySqrt(self, x: int) -> int:\n        l, r = 0, x\n        while l < r:\n            m = (l + r + 1) // 2\n            if m * m <= x:\n                l = m\n            else:\n                r = m - 1\n        return l\n"
+  }
+}, {
+  "id" : 36,
+  "slug" : "longest-consecutive-sequence",
+  "title" : "Longest Consecutive Sequence",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Hash Table", "Union Find" ],
+  "acceptance" : 47.3,
+  "companies" : [ "Google", "Amazon", "Meta", "Microsoft" ],
+  "fn" : "longestConsecutive",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an unsorted array of integers <code>nums</code>, return the length of the longest consecutive elements sequence. You must write an algorithm that runs in <code>O(n)</code> time.</p>",
+  "constraints" : [ "0 <= nums.length <= 10^5", "-10^9 <= nums[i] <= 10^9" ],
+  "hints" : [ "Put everything in a hash set.", "Only start counting from numbers x where x - 1 is NOT in the set." ],
+  "edgeCases" : [ "Empty array → 0", "Duplicates like [1,2,0,1]", "Negative numbers" ],
+  "explanation" : "Sorting gives O(n log n); the set trick makes each number part of exactly one scan.",
+  "sampleTests" : [ {
+    "input" : "[100,4,200,1,3,2]",
+    "expected" : "4"
+  }, {
+    "input" : "[0,3,7,2,5,8,4,6,0,1]",
+    "expected" : "9"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[]",
+    "expected" : "0"
+  }, {
+    "input" : "[1,2,0,1]",
+    "expected" : "3"
+  }, {
+    "input" : "[9]",
+    "expected" : "1"
+  } ],
+  "editorial" : {
+    "approach" : "Hash set; extend sequences only from their starting element.",
+    "complexity" : "Time O(n) · Space O(n)",
+    "code" : "class Solution:\n    def longestConsecutive(self, nums: List[int]) -> int:\n        s, best = set(nums), 0\n        for x in s:\n            if x - 1 not in s:\n                y = x\n                while y + 1 in s:\n                    y += 1\n                best = max(best, y - x + 1)\n        return best\n"
+  }
+}, {
+  "id" : 37,
+  "slug" : "subarray-sum-equals-k",
+  "title" : "Subarray Sum Equals K",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Hash Table", "Prefix Sum" ],
+  "acceptance" : 44.5,
+  "companies" : [ "Meta", "Google", "Amazon", "Microsoft" ],
+  "fn" : "subarraySum",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  }, {
+    "name" : "k",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an array of integers <code>nums</code> and an integer <code>k</code>, return the total number of contiguous subarrays whose sum equals <code>k</code>.</p>",
+  "constraints" : [ "1 <= nums.length <= 2 * 10^4", "-1000 <= nums[i] <= 1000", "-10^7 <= k <= 10^7" ],
+  "hints" : [ "sum(i..j) = prefix[j] - prefix[i-1].", "Count how many earlier prefix sums equal currentPrefix - k using a hash map." ],
+  "edgeCases" : [ "Negative numbers (sliding window doesn't work)", "k = 0", "Subarray starting at index 0 — seed the map with {0: 1}" ],
+  "explanation" : "Because values can be negative, two pointers fail; prefix sums + hash map give O(n).",
+  "sampleTests" : [ {
+    "input" : "[1,1,1]\n2",
+    "expected" : "2"
+  }, {
+    "input" : "[1,2,3]\n3",
+    "expected" : "2"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]\n0",
+    "expected" : "0"
+  }, {
+    "input" : "[1,-1,0]\n0",
+    "expected" : "3"
+  }, {
+    "input" : "[3,4,7,2,-3,1,4,2]\n7",
+    "expected" : "4"
+  } ],
+  "editorial" : {
+    "approach" : "Running prefix sum with a frequency map.",
+    "complexity" : "Time O(n) · Space O(n)",
+    "code" : "class Solution:\n    def subarraySum(self, nums: List[int], k: int) -> int:\n        cnt = {0: 1}\n        s = r = 0\n        for x in nums:\n            s += x\n            r += cnt.get(s - k, 0)\n            cnt[s] = cnt.get(s, 0) + 1\n        return r\n"
+  }
+}, {
+  "id" : 38,
+  "slug" : "kth-largest-element-in-an-array",
+  "title" : "Kth Largest Element in an Array",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Sorting", "Heap (Priority Queue)" ],
+  "acceptance" : 67.2,
+  "companies" : [ "Meta", "Amazon", "Microsoft", "LinkedIn", "Spotify" ],
+  "fn" : "findKthLargest",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  }, {
+    "name" : "k",
+    "type" : "int"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an integer array <code>nums</code> and an integer <code>k</code>, return the <code>k<sup>th</sup></code> largest element in the array (in sorted order, not the k<sup>th</sup> distinct element).</p>",
+  "constraints" : [ "1 <= k <= nums.length <= 10^5", "-10^4 <= nums[i] <= 10^4" ],
+  "hints" : [ "Keep a min-heap of size k; its top is the answer.", "Quickselect gives average O(n)." ],
+  "edgeCases" : [ "Duplicates count separately", "k = n → minimum", "k = 1 → maximum" ],
+  "explanation" : "Can you solve it without fully sorting?",
+  "sampleTests" : [ {
+    "input" : "[3,2,1,5,6,4]\n2",
+    "expected" : "5"
+  }, {
+    "input" : "[3,2,3,1,2,4,5,5,6]\n4",
+    "expected" : "4"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]\n1",
+    "expected" : "1"
+  }, {
+    "input" : "[2,1]\n2",
+    "expected" : "1"
+  }, {
+    "input" : "[7,7,7]\n2",
+    "expected" : "7"
+  } ],
+  "editorial" : {
+    "approach" : "Min-heap of size k.",
+    "complexity" : "Time O(n log k) · Space O(k)",
+    "code" : "class Solution:\n    def findKthLargest(self, nums: List[int], k: int) -> int:\n        return heapq.nlargest(k, nums)[-1]\n"
+  }
+}, {
+  "id" : 39,
+  "slug" : "first-missing-positive",
+  "title" : "First Missing Positive",
+  "difficulty" : "Hard",
+  "tags" : [ "Array", "Hash Table" ],
+  "acceptance" : 39.9,
+  "companies" : [ "Amazon", "Google", "Microsoft", "Meta" ],
+  "fn" : "firstMissingPositive",
+  "params" : [ {
+    "name" : "nums",
+    "type" : "int[]"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given an unsorted integer array <code>nums</code>, return the smallest positive integer that is not present. You must implement an algorithm that runs in <code>O(n)</code> time and uses <code>O(1)</code> auxiliary space.</p>",
+  "constraints" : [ "1 <= nums.length <= 10^5", "-2^31 <= nums[i] <= 2^31 - 1" ],
+  "hints" : [ "The answer is always in [1, n + 1].", "Place each value v in 1..n at index v-1 by swapping (cyclic sort); then scan for the first mismatch." ],
+  "edgeCases" : [ "No positives → 1", "Duplicates like [1,1]", "Values larger than n are ignored" ],
+  "explanation" : "Using the array itself as a hash table satisfies the O(1) space requirement.",
+  "sampleTests" : [ {
+    "input" : "[1,2,0]",
+    "expected" : "3"
+  }, {
+    "input" : "[3,4,-1,1]",
+    "expected" : "2"
+  }, {
+    "input" : "[7,8,9,11,12]",
+    "expected" : "1"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "[1]",
+    "expected" : "2"
+  }, {
+    "input" : "[2]",
+    "expected" : "1"
+  }, {
+    "input" : "[1,1]",
+    "expected" : "2"
+  } ],
+  "editorial" : {
+    "approach" : "Cyclic sort values into their slots, then find the first index i with nums[i] != i + 1.",
+    "complexity" : "Time O(n) · Space O(1)",
+    "code" : "class Solution:\n    def firstMissingPositive(self, nums: List[int]) -> int:\n        n = len(nums)\n        for i in range(n):\n            while 1 <= nums[i] <= n and nums[nums[i] - 1] != nums[i]:\n                j = nums[i] - 1\n                nums[i], nums[j] = nums[j], nums[i]\n        for i in range(n):\n            if nums[i] != i + 1:\n                return i + 1\n        return n + 1\n"
+  }
+}, {
+  "id" : 40,
+  "slug" : "longest-valid-parentheses",
+  "title" : "Longest Valid Parentheses",
+  "difficulty" : "Hard",
+  "tags" : [ "String", "Stack", "Dynamic Programming" ],
+  "acceptance" : 35.1,
+  "companies" : [ "Amazon", "Google", "Microsoft", "Uber" ],
+  "fn" : "longestValidParentheses",
+  "params" : [ {
+    "name" : "s",
+    "type" : "string"
+  } ],
+  "ret" : "int",
+  "description" : "<p>Given a string containing just the characters <code>'('</code> and <code>')'</code>, return the length of the longest valid (well-formed) parentheses <strong>substring</strong>.</p>",
+  "constraints" : [ "0 <= s.length <= 3 * 10^4", "s[i] is '(' or ')'." ],
+  "hints" : [ "Push indices on a stack, seeded with -1 as a base.", "On ')', pop; if the stack becomes empty push the current index as the new base, else the length is i - stack.top." ],
+  "edgeCases" : [ "Empty string → 0", "Only opening brackets", "Nested and adjacent valid parts like \"()(())\"" ],
+  "explanation" : "The substring must be contiguous and balanced. The base index marks where the last invalid position was.",
+  "sampleTests" : [ {
+    "input" : "\"(()\"",
+    "expected" : "2"
+  }, {
+    "input" : "\")()())\"",
+    "expected" : "4"
+  }, {
+    "input" : "\"\"",
+    "expected" : "0"
+  } ],
+  "hiddenTests" : [ {
+    "input" : "\"()(()\"",
+    "expected" : "2"
+  }, {
+    "input" : "\"()(())\"",
+    "expected" : "6"
+  }, {
+    "input" : "\"((((\"",
+    "expected" : "0"
+  } ],
+  "editorial" : {
+    "approach" : "Index stack with a sentinel base.",
+    "complexity" : "Time O(n) · Space O(n)",
+    "code" : "class Solution:\n    def longestValidParentheses(self, s: str) -> int:\n        st, best = [-1], 0\n        for i, c in enumerate(s):\n            if c == '(':\n                st.append(i)\n            else:\n                st.pop()\n                if not st:\n                    st.append(i)\n                else:\n                    best = max(best, i - st[-1])\n        return best\n"
+  }
+}, {
+  "id" : 1222,
+  "slug" : "queens-that-can-attack-the-king",
+  "title" : "Queens That Can Attack the King",
+  "difficulty" : "Medium",
+  "tags" : [ "Array", "Matrix", "Simulation" ],
+  "acceptance" : 0.0,
+  "fn" : "queensAttacktheKing",
+  "params" : [ {
+    "name" : "queens",
+    "type" : "integer[][]"
+  }, {
+    "name" : "king",
+    "type" : "integer[]"
+  } ],
+  "ret" : "list<list<integer>>",
+  "description" : "<p>On a <strong>0-indexed</strong> <code>8 x 8</code> chessboard, there can be multiple black queens and one white king.</p>\n\n<p>You are given a 2D integer array <code>queens</code> where <code>queens[i] = [xQueen<sub>i</sub>, yQueen<sub>i</sub>]</code> represents the position of the <code>i<sup>th</sup></code> black queen on the chessboard. You are also given an integer array <code>king</code> of length <code>2</code> where <code>king = [xKing, yKing]</code> represents the position of the white king.</p>\n\n<p>Return <em>the coordinates of the black queens that can directly attack the king</em>. You may return the answer in <strong>any order</strong>.</p>\n\n<p>&nbsp;</p>\n<p><strong class=\"example\">Example 1:</strong></p>\n<img alt=\"\" src=\"https://assets.leetcode.com/uploads/2022/12/21/chess1.jpg\" style=\"width: 400px; height: 400px;\" />\n<pre>\n<strong>Input:</strong> queens = [[0,1],[1,0],[4,0],[0,4],[3,3],[2,4]], king = [0,0]\n<strong>Output:</strong> [[0,1],[1,0],[3,3]]\n<strong>Explanation:</strong> The diagram above shows the three queens that can directly attack the king and the three queens that cannot attack the king (i.e., marked with red dashes).\n</pre>\n\n<p><strong class=\"example\">Example 2:</strong></p>\n<img alt=\"\" src=\"https://assets.leetcode.com/uploads/2022/12/21/chess2.jpg\" style=\"width: 400px; height: 400px;\" />\n<pre>\n<strong>Input:</strong> queens = [[0,0],[1,1],[2,2],[3,4],[3,5],[4,4],[4,5]], king = [3,3]\n<strong>Output:</strong> [[2,2],[3,4],[4,4]]\n<strong>Explanation:</strong> The diagram above shows the three queens that can directly attack the king and the three queens that cannot attack the king (i.e., marked with red dashes).\n</pre>\n\n<p>&nbsp;</p>\n<p><strong>Constraints:</strong></p>\n\n<ul>\n\t<li><code>1 &lt;= queens.length &lt; 64</code></li>\n\t<li><code>queens[i].length == king.length == 2</code></li>\n\t<li><code>0 &lt;= xQueen<sub>i</sub>, yQueen<sub>i</sub>, xKing, yKing &lt; 8</code></li>\n\t<li>All the given positions are <strong>unique</strong>.</li>\n</ul>\n",
+  "constraints" : [ ],
+  "sampleTests" : [ {
+    "input" : "queens = [[0,1],[1,0],[4,0],[0,4],[3,3],[2,4]], king = [0,0]",
+    "expected" : "[[0,1],[1,0],[3,3]]"
+  }, {
+    "input" : "queens = [[0,0],[1,1],[2,2],[3,4],[3,5],[4,4],[4,5]], king = [3,3]",
+    "expected" : "[[2,2],[3,4],[4,4]]"
+  } ],
+  "hiddenTests" : [ ],
+  "editorial" : {
+    "approach" : "See LeetCode",
+    "complexity" : "",
+    "code" : ""
+  },
+  "companies" : [ ],
+  "hints" : [ "Check 8 directions around the King.", "Find the nearest queen in each direction." ],
+  "edgeCases" : [ ],
+  "explanation" : ""
+} ]

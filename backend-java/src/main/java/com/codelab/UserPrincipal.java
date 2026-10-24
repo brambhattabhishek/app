@@ -2,11 +2,12 @@ package com.codelab;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 
-@Data
+@Getter
 @AllArgsConstructor
 public class UserPrincipal {
-    private String userId;
+    private String id;
     private String email;
-    private String role;      // "ADMIN" | "USER"
+    private String password;
 }
