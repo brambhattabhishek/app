@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /profile
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /profile
+
+Sitemap: https://codeup-y3u0.onrender.com/sitemap.xml
