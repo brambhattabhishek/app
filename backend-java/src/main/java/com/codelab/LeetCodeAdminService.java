@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -31,10 +32,6 @@ import java.util.regex.Pattern;
 public class LeetCodeAdminService {
 
     private static final String GRAPHQL = "https://leetcode.com/graphql/";
-    private static final String RES     = "src/main/resources/";
-    private static final Path   P1      = Paths.get(RES + "problems.json");
-    private static final Path   P2      = Paths.get(RES + "problems2.json");
-    private static final Path   PM      = Paths.get(RES + "problems_meta.json");
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
@@ -43,6 +40,7 @@ public class LeetCodeAdminService {
 
     private final ProblemRepository     problemRepo;
     private final ProblemMetaRepository metaRepo;
+    private final ResourceLoader        resourceLoader;
 
     private volatile String sessionCookie = "";
     private final AtomicBoolean fetchingAll = new AtomicBoolean(false);
@@ -51,29 +49,24 @@ public class LeetCodeAdminService {
         this.sessionCookie = cookie == null ? "" : cookie.trim();
     }
 
-    // ★ Paths ab static nahi, method mein resolve honge
-    private final ResourceLoader resourceLoader;
+    public boolean isFetchingAll() { return fetchingAll.get(); }
 
-    // Helper method — path resolve karo
     private Path resolvePath(String filename) throws IOException {
-        // Try to read from classpath first
         try {
-            org.springframework.core.io.Resource res =
-                    resourceLoader.getResource("classpath:" + filename);
+            Resource res = resourceLoader.getResource("classpath:" + filename);
             if (res.exists()) {
                 File file = res.getFile();
                 if (file.canWrite()) return file.toPath();
             }
         } catch (Exception ignored) {}
 
-        // Fallback: current working directory
         Path fallback = Paths.get("data", filename);
         Files.createDirectories(fallback.getParent());
-        if (!Files.exists(fallback)) Files.writeString(fallback, filename.endsWith("meta.json") ? "{}" : "[]");
+        if (!Files.exists(fallback)) {
+            Files.writeString(fallback, filename.endsWith("meta.json") ? "{}" : "[]");
+        }
         return fallback;
     }
-
-    public boolean isFetchingAll() { return fetchingAll.get(); }
 
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
@@ -97,7 +90,9 @@ public class LeetCodeAdminService {
             }
 
             try {
+                log.info("Fetching #{}...", num);
                 String slug = slugForNumber(num);
+                log.info("Resolved #{} -> slug={}", num, slug);
                 if (slug == null) {
                     log.warn("No slug for #{}", num);
                     continue;
@@ -112,17 +107,15 @@ public class LeetCodeAdminService {
                 Problem problem  = toProblem(num, d);
                 ProblemMeta meta = toMeta(num, d);
 
-                // ★ MongoDB mein save
                 problemRepo.save(problem);
                 metaRepo.save(meta);
 
-                // ★ JSON files mein bhi save
                 replaceOrAdd(p1Json, num, problemToJson(problem));
                 replaceOrAdd(p2Json, num, problemMetaToJson2(problem, meta));
                 metaJson.set(String.valueOf(num), metaToJson(meta));
 
                 added.add(num);
-                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}) to DB + JSON",
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={})",
                         num, problem.getTitle(), problem.getFn(),
                         problem.getParams().size(), problem.getSampleTests().size());
 
@@ -133,16 +126,16 @@ public class LeetCodeAdminService {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                log.error("✗ Failed #{}: {}", num, e.getMessage());
+                log.error("✗ Failed #{}: {}", num, e.getMessage(), e);
             }
         }
 
-        // ★ Dono JSON files write
         write(p1Path, p1Json);
         write(p2Path, p2Json);
         write(pmPath, metaJson);
         return added;
     }
+
     @Async("taskExecutor")
     public void fetchAllAsync() {
         try { fetchAll(); } catch (Exception e) { log.error("fetchAll background failure", e); }
@@ -206,6 +199,7 @@ public class LeetCodeAdminService {
         }
     }
 
+    // ★★★ FIXED: companyTags HATA DIYA — public API par 403 deta hai ★★★
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
         query($s:String!){question(titleSlug:$s){
@@ -213,32 +207,74 @@ public class LeetCodeAdminService {
           topicTags{name} hints
           codeSnippets{lang langSlug code}
           sampleTestCase metaData
-          companyTags { name slug }   // ← Yeh add karo
         }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
         return root.path("data").path("question");
     }
 
-    private String slugForNumber(int num) throws Exception {
-        JsonNode r = graphql("""
-            query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
-                categorySlug:"", limit:20, skip:0, filters:$f){ 
-                questions:data{frontendQuestionId titleSlug} 
-            }}""",
-                "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
+    private volatile Map<Integer, String> slugCache = null;
 
-        JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
-        if (qs.isArray()) {
-            for (JsonNode q : qs) {
-                String idStr = q.path("frontendQuestionId").asText("");
-                if (idStr.equals(String.valueOf(num))) {
-                    return q.path("titleSlug").asText();
+    private String slugForNumber(int num) throws Exception {
+        try {
+            JsonNode r = graphql("""
+                query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
+                    categorySlug:"", limit:20, skip:0, filters:$f){ 
+                    questions:data{frontendQuestionId titleSlug} 
+                }}""",
+                    "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
+
+            JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
+            if (qs.isArray()) {
+                for (JsonNode q : qs) {
+                    String idStr = q.path("frontendQuestionId").asText("");
+                    if (idStr.equals(String.valueOf(num))) {
+                        return q.path("titleSlug").asText();
+                    }
                 }
             }
-            if (qs.size() > 0) {
-                return qs.get(0).path("titleSlug").asText();
-            }
+        } catch (Exception e) {
+            log.warn("Search failed for #{}: {}", num, e.getMessage());
         }
-        return null;
+
+        log.info("Building full slug cache for #{}", num);
+        Map<Integer, String> cache = slugCache;
+        if (cache == null || cache.isEmpty()) {
+            cache = buildSlugCache();
+            slugCache = cache;
+        }
+        return cache.get(num);
+    }
+
+    private Map<Integer, String> buildSlugCache() throws Exception {
+        Map<Integer, String> map = new HashMap<>();
+        int skip = 0;
+        int limit = 100;
+
+        while (true) {
+            JsonNode r = graphql("""
+                query($skip:Int!, $limit:Int!){problemsetQuestionList:questionList(
+                    categorySlug:"", limit:$limit, skip:$skip, filters:{}){ 
+                    questions:data{frontendQuestionId titleSlug} 
+                }}""",
+                    "{\"skip\":" + skip + ",\"limit\":" + limit + "}");
+
+            JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
+            if (!qs.isArray() || qs.size() == 0) break;
+
+            for (JsonNode q : qs) {
+                String idStr = q.path("frontendQuestionId").asText("");
+                String slug = q.path("titleSlug").asText("");
+                if (!idStr.isEmpty() && !slug.isEmpty()) {
+                    try { map.put(Integer.parseInt(idStr), slug); } catch (Exception ignored) {}
+                }
+            }
+
+            if (qs.size() < limit) break;
+            skip += limit;
+            Thread.sleep(150);
+        }
+
+        log.info("Built slug cache with {} problems", map.size());
+        return map;
     }
 
     private JsonNode graphql(String query, String vars) throws Exception {
@@ -258,7 +294,7 @@ public class LeetCodeAdminService {
 
         HttpResponse<String> r = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
         if (r.statusCode() >= 400)
-            throw new RuntimeException("GraphQL HTTP " + r.statusCode());
+            throw new RuntimeException("GraphQL HTTP " + r.statusCode() + ": " + r.body());
 
         JsonNode root = MAPPER.readTree(r.body());
         if (root.has("errors"))
@@ -266,7 +302,6 @@ public class LeetCodeAdminService {
         return root;
     }
 
-    // ★★★ COMPLETE FIX: codeSnippets + metaData + description parsing ★★★
     private Problem toProblem(int num, JsonNode d) {
         List<String> tags = new ArrayList<>();
         if (d.path("topicTags").isArray())
@@ -277,10 +312,8 @@ public class LeetCodeAdminService {
         String ret = "";
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
 
-        // ═══════════ STEP 1: codeSnippets se function signature ═══════════
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
-            // JavaScript snippet prefer karein
             JsonNode jsSnippet = null;
             for (JsonNode s : snippets) {
                 String langSlug = s.path("langSlug").asText("").toLowerCase();
@@ -292,9 +325,7 @@ public class LeetCodeAdminService {
             if (jsSnippet == null) jsSnippet = snippets.get(0);
 
             String code = jsSnippet.path("code").asText("");
-            log.debug("Snippet for #{}: {}", num, code.length() > 200 ? code.substring(0, 200) : code);
 
-            // Pattern: "var fnName = function(arg1, arg2) {" OR "var fnName = function(arg1, arg2) {"
             Pattern jsPattern = Pattern.compile(
                     "(?:var|let|const)\\s+(\\w+)\\s*=\\s*function\\s*\\(([^)]*)\\)",
                     Pattern.DOTALL
@@ -313,7 +344,6 @@ public class LeetCodeAdminService {
                 }
             }
 
-            // Return type: `/** @return {boolean} */` ya JS keyword se
             Pattern retPattern = Pattern.compile("@return\\s*\\{([^}]+)\\}");
             Matcher rm = retPattern.matcher(code);
             if (rm.find()) {
@@ -321,7 +351,6 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 2: metaData override (agar available) ═══════════
         try {
             String metaDataStr = d.path("metaData").asText("");
             if (!metaDataStr.isEmpty()) {
@@ -346,7 +375,6 @@ public class LeetCodeAdminService {
             log.warn("metaData parse failed for #{}: {}", num, e.getMessage());
         }
 
-        // ═══════════ STEP 3: Description se Input/Output pairs ═══════════
         String description = d.path("content").asText("");
         if (!description.isEmpty()) {
             String text = description
@@ -380,7 +408,6 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 4: sampleTestCase fallback ═══════════
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -399,7 +426,6 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 5: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -464,18 +490,15 @@ public class LeetCodeAdminService {
         }
     }
 
+    // ★★★ FIXED: companyTags HATA DIYA — ab public API se response aayega ★★★
     private ProblemMeta toMeta(int num, JsonNode d) {
         List<String> hints = new ArrayList<>();
         if (d.path("hints").isArray())
             d.path("hints").forEach(h -> hints.add(h.asText()));
 
-        List<String> companies = new ArrayList<>();
-        if (d.path("companyTags").isArray())
-            d.path("companyTags").forEach(c -> companies.add(c.path("name").asText()));
-
         return ProblemMeta.builder()
                 .id(num)
-                .companies(companies)
+                .companies(new ArrayList<>())  // ← Free users ke liye khaali
                 .hints(hints)
                 .edgeCases(new ArrayList<>())
                 .explanation("")
@@ -549,6 +572,7 @@ public class LeetCodeAdminService {
         }
         arr.add(obj);
     }
+
     public int migrateJsonToMongo() throws IOException {
         ArrayNode p1Json = readArray(resolvePath("problems.json"));
         ArrayNode p2Json = readArray(resolvePath("problems2.json"));
@@ -585,6 +609,7 @@ public class LeetCodeAdminService {
         }
         return problemsSaved;
     }
+
     private ProblemMeta buildMetaFromJson(int id, JsonNode j) {
         List<String> hints = new ArrayList<>();
         if (j.path("hints").isArray()) j.path("hints").forEach(h -> hints.add(h.asText()));
