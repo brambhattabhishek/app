@@ -54,8 +54,9 @@
     <link rel="alternate" hreflang="x-default" href="https://codeup-y3u0.onrender.com/" />
 
     <!-- ============================================================
-         STRUCTURED DATA — WebSite + Organization + SearchAction
-         (Gives Google sitelinks search box + brand knowledge panel)
+         STRUCTURED DATA — WebSite (PRIMARY BRAND SIGNAL) + Organization + WebPage
+         The WebSite node with "name": "CodWP" is what tells Google
+         the site name to display in search results.
          ============================================================ -->
     <script type="application/ld+json">
         {
@@ -185,7 +186,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com" />
-    <link rel="dns-prefetch" href="https://ap.emergent.sh" />
 
     <link
             href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
@@ -249,7 +249,9 @@
 <div id="root"></div>
 
 <!-- ============================================================
-     POSTHOG ANALYTICS — PRESERVED
+     POSTHOG ANALYTICS — now pointing to PostHog Cloud (no Emergent dependency)
+     ⚠️ Replace the project key below with your own PostHog project key
+     from https://us.posthog.com (Project Settings → API Key).
      ============================================================ -->
 <script>
     !(function (t, e) {
@@ -296,7 +298,7 @@
     posthog.init(
         "phc_DbsPb39SRc8z3EiQ6Dhj6ikv4H4rTKcht9d4sZSesceP",
         {
-            api_host: "https://ap.emergent.sh",
+            api_host: "https://us.i.posthog.com",
             person_profiles: "identified_only",
             session_recording: {
                 recordCrossOriginIframes: true,
