@@ -54,7 +54,7 @@ public class AuthController {
         return new Document("user_id", newId())
                 .append("name", name)
                 .append("provider", provider)
-                .append("role", "USER")                       // ★ NEW
+                .append("role", "USER")
                 .append("interests", new ArrayList<>())
                 .append("created_at", new Date());
     }
@@ -93,9 +93,6 @@ public class AuthController {
         String name = r.name() == null || r.name().isBlank() ? email.split("@")[0] : r.name().trim();
         Document u = newUser(name, "email").append("email", email).append("password_hash", enc.encode(r.password()));
 
-        // ★ Bootstrap: if this email matches ADMIN_EMAIL, mark as ADMIN immediately.
-        if (isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
-
         users().insertOne(u);
         return auth.login(u, true, "email", req);
     }
@@ -117,9 +114,9 @@ public class AuthController {
         }
         attempts.deleteOne(eq("identifier", ident));
 
-        // ★ Backfill role on legacy users who registered before roles existed.
+        // Backfill role for old users
         if (u.getString("role") == null) {
-            String role = isBootstrapAdminEmail(email) ? "ADMIN" : "USER";
+            String role = "USER";
             users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
             u.put("role", role);
         }
@@ -130,9 +127,7 @@ public class AuthController {
     @GetMapping("/me")
     public Map<String, Object> me(@RequestHeader(value = "Authorization", required = false) String h) {
         Document u = auth.require(h);
-        Map<String, Object> out = AuthService.publicUser(u);
-        out.put("isAdmin", "ADMIN".equals(roleOf(u)));        // ★ frontend guard uses this
-        return out;
+        return AuthService.publicUser(u);
     }
 
     /**
@@ -151,6 +146,7 @@ public class AuthController {
         users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
         return Map.of("email", email, "role", role, "ok", true);
     }
+
 
     /** ★ Admin-only: list every admin. Useful for the Admin panel "who can add problems" card. */
     @GetMapping("/admin/list-admins")

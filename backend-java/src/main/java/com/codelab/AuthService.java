@@ -23,9 +23,16 @@ public class AuthService {
     private final SecretKey key = Keys.hmacShaKeyFor(System.getenv("JWT_SECRET").getBytes(StandardCharsets.UTF_8));
     static final long ACTIVE_TOUCH_MS = 5 * 60_000L;
 
-    public String token(String uid) {
-        return Jwts.builder().subject(uid).issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + 7L * 86_400_000)).signWith(key).compact();
+    // ★ UPDATED: Ab JWT token mein role bhi jayega
+    public String token(String uid, String email, String role) {
+        return Jwts.builder()
+                .subject(uid)
+                .claim("email", email)
+                .claim("role", role == null ? "USER" : role) // ROLE JWT MEIN ADD KIYA
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 7L * 86_400_000))
+                .signWith(key)
+                .compact();
     }
 
     public Document optional(String header) {
@@ -50,9 +57,15 @@ public class AuthService {
         return u;
     }
 
+    // ★ UPDATED: Database ka role field check karega
     public static boolean isAdmin(Document u) {
+        if (u == null) return false;
+        String role = u.getString("role");
+        if ("ADMIN".equalsIgnoreCase(role)) return true;
+
+        // Fallback: check legacy ADMIN_EMAILS env
         String admins = Optional.ofNullable(System.getenv("ADMIN_EMAILS")).orElse("");
-        return u.getString("email") != null && Arrays.asList(admins.toLowerCase().split(",")).contains(u.getString("email"));
+        return u.getString("email") != null && Arrays.asList(admins.toLowerCase().split(",")).contains(u.getString("email").toLowerCase());
     }
 
     public static Map<String, Object> publicUser(Document u) {
@@ -60,7 +73,11 @@ public class AuthService {
         for (String k : List.of("user_id", "name", "email", "phone", "picture", "provider", "providers", "bio", "about", "socials", "location", "interests", "daily_reminder", "daily_streak", "daily_best", "coins", "badges",
                 "github_login", "created_at", "last_login_at", "login_count"))
             m.put(k, u.get(k));
-        m.put("is_admin", isAdmin(u));
+
+        boolean admin = isAdmin(u);
+        m.put("role", u.getString("role") == null ? "USER" : u.getString("role")); // Role explicitly bhejein
+        m.put("is_admin", admin);
+        m.put("isAdmin", admin); // Frontend isAdmin dhundh raha hai
         return m;
     }
 
@@ -69,7 +86,6 @@ public class AuthService {
         return f != null && !f.isBlank() ? f.split(",")[0].trim() : req.getRemoteAddr();
     }
 
-    /** Records login metadata, tracking event, and triggers welcome / welcome-back messages. */
     public Map<String, Object> login(Document u, boolean isNew, String method, HttpServletRequest req) {
         Date prevActive = u.getDate("last_active_at");
         Date now = new Date();
@@ -80,9 +96,15 @@ public class AuthService {
         String greeting = notifier.greet(u, isNew, prevActive);
         mongo.getCollection("events").insertOne(new Document("type", "login").append("user_id", u.getString("user_id")).append("method", method)
                 .append("new_user", isNew).append("greeting", greeting).append("ip", ip(req)).append("ua", ua).append("created_at", now));
+
         Document fresh = mongo.getCollection("users").find(eq("user_id", u.getString("user_id"))).first();
+
+        // ★ Yahan role pass kiya token() method mein
+        String role = fresh.getString("role") == null ? "USER" : fresh.getString("role");
+        String token = token(fresh.getString("user_id"), fresh.getString("email"), role);
+
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("token", token(u.getString("user_id")));
+        m.put("token", token);
         m.put("user", publicUser(fresh));
         m.put("greeting", greeting);
         return m;
