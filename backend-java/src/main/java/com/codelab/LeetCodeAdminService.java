@@ -237,23 +237,23 @@ public class LeetCodeAdminService {
             return cache.get(num);
         }
 
-        // 2. Try search
+        // 2. Try search — NOTE: field is "acRate" and "questionFrontendId" in search results
         try {
             JsonNode r = graphql("""
             query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
                 categorySlug:"", limit:20, skip:0, filters:$f){ 
-                questions:data{frontendQuestionId titleSlug acceptanceRate} 
+                questions:data{questionFrontendId titleSlug acRate} 
             }}""",
                     "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
 
             JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
             if (qs.isArray()) {
                 for (JsonNode q : qs) {
-                    String idStr = q.path("frontendQuestionId").asText("");
+                    String idStr = q.path("questionFrontendId").asText("");
                     if (idStr.equals(String.valueOf(num))) {
                         return new SlugInfo(
                                 q.path("titleSlug").asText(),
-                                q.path("acceptanceRate").asDouble(0.0)
+                                q.path("acRate").asDouble(0.0)   // ← acRate, not acceptanceRate
                         );
                     }
                 }
@@ -262,7 +262,7 @@ public class LeetCodeAdminService {
             log.warn("Search failed for #{}: {}", num, e.getMessage());
         }
 
-        // 3. Build full cache
+        // 3. Build full cache (list query has "acceptanceRate")
         synchronized (cacheLock) {
             if (slugCache == null || slugCache.isEmpty()) {
                 slugCache = buildSlugCache();

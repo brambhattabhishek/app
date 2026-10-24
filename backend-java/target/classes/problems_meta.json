@@ -100,5 +100,11 @@
     "hints" : [ "Check 8 directions around the King.", "Find the nearest queen in each direction." ],
     "edgeCases" : [ ],
     "explanation" : ""
+  },
+  "124" : {
+    "companies" : [ ],
+    "hints" : [ ],
+    "edgeCases" : [ ],
+    "explanation" : ""
   }
 }
