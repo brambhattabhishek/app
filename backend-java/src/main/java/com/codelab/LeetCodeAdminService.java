@@ -18,9 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -48,9 +49,7 @@ public class LeetCodeAdminService {
         this.sessionCookie = cookie == null ? "" : cookie.trim();
     }
 
-    public boolean isFetchingAll() {
-        return fetchingAll.get();
-    }
+    public boolean isFetchingAll() { return fetchingAll.get(); }
 
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
@@ -76,7 +75,6 @@ public class LeetCodeAdminService {
                     continue;
                 }
 
-                // ★ CHANGED: ab hum codeSnippets aur metaData bhi fetch kar rahe hain
                 JsonNode d = fetchQuestionDetail(slug);
                 if (d == null || d.isMissingNode() || d.isNull()) {
                     log.warn("Empty detail for #{} ({})", num, slug);
@@ -94,14 +92,13 @@ public class LeetCodeAdminService {
                 metaJson.set(String.valueOf(num), metaToJson(meta));
 
                 added.add(num);
-                log.info("✓ Saved #{} {} to Mongo + JSON", num, problem.getTitle());
+                log.info("✓ Saved #{} {} (samples: {})", num, problem.getTitle(), problem.getSampleTests().size());
 
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
                 }
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                log.warn("Interrupted at #{}", num);
                 break;
             } catch (Exception e) {
                 log.error("✗ Failed #{}: {}", num, e.getMessage());
@@ -120,10 +117,7 @@ public class LeetCodeAdminService {
     }
 
     public int fetchAll() throws Exception {
-        if (!fetchingAll.compareAndSet(false, true)) {
-            log.warn("fetchAll already running — skipping duplicate request");
-            return 0;
-        }
+        if (!fetchingAll.compareAndSet(false, true)) return 0;
         try {
             JsonNode list = graphql("""
                 query { problemsetQuestionList: questionList(categorySlug:"",limit:3000,skip:0,filters:{}) {
@@ -134,9 +128,8 @@ public class LeetCodeAdminService {
             ArrayNode p2Json    = MAPPER.createArrayNode();
             ObjectNode metaJson = MAPPER.createObjectNode();
 
-            int count = 0, idx = 0;
+            int count = 0;
             for (JsonNode q : list.path("data").path("problemsetQuestionList").path("questions")) {
-                idx++;
                 String slug = q.path("titleSlug").asText();
                 String numStr = q.path("frontendQuestionId").asText("");
                 int num;
@@ -158,7 +151,7 @@ public class LeetCodeAdminService {
                     metaJson.set(String.valueOf(num), metaToJson(meta));
 
                     count++;
-                    log.info("✓ [{}] {} {}", count, num, slug);
+                    log.info("✓ [{}] {} {} (samples: {})", count, num, slug, problem.getSampleTests().size());
                     Thread.sleep(250);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -177,7 +170,6 @@ public class LeetCodeAdminService {
         }
     }
 
-    // ★ CHANGED: query mein codeSnippets, sampleTestCase, metaData bhi add kiya
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
             query($s:String!){question(titleSlug:$s){
@@ -192,10 +184,24 @@ public class LeetCodeAdminService {
     private String slugForNumber(int num) throws Exception {
         JsonNode r = graphql("""
             query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
-                categorySlug:"", limit:1, skip:0, filters:$f){ questions:data{titleSlug} }}""",
+                categorySlug:"", limit:20, skip:0, filters:$f){ 
+                questions:data{frontendQuestionId titleSlug} 
+            }}""",
                 "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
+
         JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
-        return qs.isArray() && qs.size() > 0 ? qs.get(0).path("titleSlug").asText() : null;
+        if (qs.isArray()) {
+            for (JsonNode q : qs) {
+                String idStr = q.path("frontendQuestionId").asText("");
+                if (idStr.equals(String.valueOf(num))) {
+                    return q.path("titleSlug").asText();
+                }
+            }
+            if (qs.size() > 0) {
+                return qs.get(0).path("titleSlug").asText();
+            }
+        }
+        return null;
     }
 
     private JsonNode graphql(String query, String vars) throws Exception {
@@ -223,7 +229,7 @@ public class LeetCodeAdminService {
         return root;
     }
 
-    // ★★★ THE MAIN FIX: metaData aur codeSnippets parse kar raha hai ★★★
+    // ★★★ FIXED: Sample tests parsing ★★★
     private Problem toProblem(int num, JsonNode d) {
         List<String> tags = new ArrayList<>();
         if (d.path("topicTags").isArray())
@@ -232,8 +238,9 @@ public class LeetCodeAdminService {
         String fn = "";
         List<Problem.Param> params = new ArrayList<>();
         String ret = "";
+        List<Problem.SampleTest> sampleTests = new ArrayList<>();
 
-        // Parse metaData (JSON string inside the JSON, silly LeetCode!)
+        // 1. metaData se fn, params, ret nikaalein
         try {
             String metaDataStr = d.path("metaData").asText("");
             if (!metaDataStr.isEmpty()) {
@@ -243,44 +250,85 @@ public class LeetCodeAdminService {
                 JsonNode paramsArr = meta.path("params");
                 if (paramsArr.isArray()) {
                     for (JsonNode p : paramsArr) {
-                        String pName = p.path("name").asText("");
-                        String pType = p.path("type").asText("");
-                        params.add(new Problem.Param(pName, pType));
+                        params.add(new Problem.Param(
+                                p.path("name").asText(""),
+                                p.path("type").asText("")
+                        ));
                     }
                 }
                 ret = meta.path("return").path("type").asText("");
-
-                // Agar params empty hai but codeSnippets mein kuch hai, toh wahan se nikaalne ki koshish karein
-                if (params.isEmpty() && d.path("codeSnippets").isArray()) {
-                    for (JsonNode snip : d.path("codeSnippets")) {
-                        if ("javascript".equals(snip.path("langSlug").asText())) {
-                            String code = snip.path("code").asText("");
-                            // Rough parse: "var isSameTree = function(p, q) {"
-                            int fnIdx = code.indexOf("= function(");
-                            if (fnIdx > 0) {
-                                int start = fnIdx + "= function(".length();
-                                int end = code.indexOf(")", start);
-                                if (end > start) {
-                                    String argsStr = code.substring(start, end).trim();
-                                    if (!argsStr.isEmpty()) {
-                                        for (String arg : argsStr.split(",")) {
-                                            String argName = arg.trim();
-                                            if (!argName.isEmpty()) {
-                                                params.add(new Problem.Param(argName, "any"));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
         } catch (Exception e) {
-            log.warn("Failed to parse metaData for #{}: {}", num, e.getMessage());
+            log.warn("metaData parse failed for #{}: {}", num, e.getMessage());
         }
 
-        // Defaults
+        // 2. Description HTML se Input/Output pairs nikaalein
+        String description = d.path("content").asText("");
+        if (!description.isEmpty()) {
+            // LeetCode HTML ko plain text mein convert karein
+            // <pre> blocks ko specially handle karein
+            String text = description
+                    .replaceAll("<br\\s*/?>", "\n")
+                    .replaceAll("</p>", "\n")
+                    .replaceAll("</pre>", "\n")
+                    .replaceAll("<[^>]*>", " ")  // baaki tags hatao
+                    .replace("&quot;", "\"")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+                    .replace("&nbsp;", " ")
+                    .replace("&#39;", "'")
+                    .replace("&apos;", "'");
+
+            // "Input:" aur "Output:" ke pairs dhundhein
+            // Regex: Input: X Output: Y (X aur Y dono multiline ho sakte hain)
+            Pattern ioPattern = Pattern.compile(
+                    "Input:\\s*(.+?)\\s*Output:\\s*(.+?)(?=Explanation:|Example\\s+\\d|Constraints:|\\z)",
+                    Pattern.DOTALL
+            );
+            Matcher m = ioPattern.matcher(text);
+            while (m.find()) {
+                String input = m.group(1).trim()
+                        .replaceAll("\\s+", " ")
+                        .replaceAll("^\\s+|\\s+$", "");
+                String expected = m.group(2).trim()
+                        .replaceAll("\\s+", " ")
+                        .replaceAll("^\\s+|\\s+$", "");
+
+                // Skip empty
+                if (input.isEmpty() || expected.isEmpty()) continue;
+
+                // Duplicate check
+                boolean dup = sampleTests.stream()
+                        .anyMatch(st -> st.getInput().equals(input));
+                if (dup) continue;
+
+                sampleTests.add(Problem.SampleTest.builder()
+                        .input(input)
+                        .expected(expected)
+                        .build());
+            }
+        }
+
+        // 3. Fallback: agar description se nahi mile toh sampleTestCase se try karein
+        if (sampleTests.isEmpty()) {
+            String sampleInput = d.path("sampleTestCase").asText("");
+            if (!sampleInput.isEmpty() && !params.isEmpty()) {
+                String[] lines = sampleInput.split("\n");
+                if (lines.length >= params.size()) {
+                    StringBuilder inputBuilder = new StringBuilder();
+                    for (int i = 0; i < params.size(); i++) {
+                        if (i > 0) inputBuilder.append("\n");
+                        inputBuilder.append(lines[i].trim());
+                    }
+                    sampleTests.add(Problem.SampleTest.builder()
+                            .input(inputBuilder.toString())
+                            .expected("")
+                            .build());
+                }
+            }
+        }
+
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -294,9 +342,9 @@ public class LeetCodeAdminService {
                 .fn(fn)
                 .params(params)
                 .ret(ret)
-                .description(d.path("content").asText())
+                .description(description)
                 .constraints(new ArrayList<>())
-                .sampleTests(new ArrayList<>())
+                .sampleTests(sampleTests)
                 .hiddenTests(new ArrayList<>())
                 .editorial(Problem.Editorial.builder()
                         .approach("See LeetCode")
@@ -318,11 +366,6 @@ public class LeetCodeAdminService {
                 .edgeCases(new ArrayList<>())
                 .explanation("")
                 .build();
-    }
-
-    private static String text(JsonNode n, String field) {
-        JsonNode v = n.path(field);
-        return v.isMissingNode() || v.isNull() ? "" : v.asText("");
     }
 
     private ObjectNode problemToJson(Problem p) {
@@ -405,9 +448,7 @@ public class LeetCodeAdminService {
                 if (p.getId() == null) continue;
                 problemRepo.save(p);
                 problemsSaved++;
-            } catch (Exception e) {
-                log.warn("problem migrate skip: {}", e.getMessage());
-            }
+            } catch (Exception e) { log.warn("problem migrate skip: {}", e.getMessage()); }
         }
 
         int metaSaved = 0;
@@ -429,7 +470,6 @@ public class LeetCodeAdminService {
                 metaSaved++;
             } catch (Exception e) { log.warn("metaObj migrate skip key={}: {}", entry.getKey(), e.getMessage()); }
         }
-
         return problemsSaved;
     }
 
