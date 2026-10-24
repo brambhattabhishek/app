@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Users, Activity, LogIn, Eye, Send, Plus, Loader2 } from "lucide-react";
+import {
+    Users, Activity, LogIn, Eye, Send, Plus, Loader2,
+    Database, RefreshCw, ShieldCheck, UserMinus
+} from "lucide-react";
 import { api, errMsg, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -12,10 +15,11 @@ const Stat = ({ icon: Icon, label, value, id }) => (
     </div>
 );
 
+// ── 1. Add Problems Panel ──────────────────────────────────────────
 const AddProblemsPanel = ({ onAdded }) => {
     const [numbers, setNumbers] = useState("");
     const [busy, setBusy] = useState(false);
-    const [result, setResult] = useState(null); // { ok, added?, error? }
+    const [result, setResult] = useState(null);
 
     const submit = async () => {
         const trimmed = numbers.trim();
@@ -37,7 +41,7 @@ const AddProblemsPanel = ({ onAdded }) => {
     return (
         <section className="rounded-xl border bg-card p-4" data-testid="admin-add-problems">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Add LeetCode Problems
+                Add LeetCode Problems (Comma or space separated)
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -46,35 +50,105 @@ const AddProblemsPanel = ({ onAdded }) => {
                     onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
                     placeholder="e.g. 1 3 5  or  1,3,5  (problem numbers)"
                     className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                    data-testid="add-problems-input"
                     disabled={busy}
                 />
                 <button
                     onClick={submit}
                     disabled={busy || !numbers.trim()}
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                    data-testid="add-problems-btn"
                 >
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    {busy ? "Adding…" : "Add"}
+                    {busy ? "Adding…" : "Add Problems"}
                 </button>
             </div>
-
             {result?.ok && (
-                <p className="mt-2 text-xs text-easy" data-testid="add-problems-success">
-                    Added {result.added.length} problem(s)
-                    {result.added.length > 0 && `: ${result.added.join(", ")}`}
-                </p>
+                <p className="mt-2 text-xs text-green-500">Added {result.added.length} problem(s): {result.added.join(", ")}</p>
             )}
-            {result && !result.ok && (
-                <p className="mt-2 text-xs text-hard" data-testid="add-problems-error">
-                    {result.error}
-                </p>
-            )}
+            {result && !result.ok && <p className="mt-2 text-xs text-red-500">{result.error}</p>}
         </section>
     );
 };
 
+// ── 2. System Tools Panel (Migrate & Fetch All) ────────────────────
+const SystemToolsPanel = ({ onMigrated }) => {
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState(null);
+
+    const handleMigrate = async () => {
+        if (!window.confirm("This will copy all local JSON problems into MongoDB. Proceed?")) return;
+        setBusy(true); setMsg(null);
+        try {
+            const { data } = await api.post("/admin/leetcode/migrate-json");
+            setMsg({ ok: true, text: `Successfully migrated ${data.migrated} problems to Database.` });
+            onMigrated?.();
+        } catch (e) {
+            setMsg({ ok: false, text: errMsg(e) });
+        } finally { setBusy(false); }
+    };
+
+    const handleFetchAll = async () => {
+        if (!window.confirm("This will fetch ALL problems from LeetCode. It runs in the background and takes 30-60 minutes. Proceed?")) return;
+        setBusy(true); setMsg(null);
+        try {
+            await api.post("/admin/leetcode/fetch-all", {});
+            setMsg({ ok: true, text: "Full sync started in the background. Check server logs for progress." });
+        } catch (e) {
+            const is409 = e?.response?.status === 409;
+            setMsg({ ok: false, text: is409 ? "A fetch is already running. Please wait." : errMsg(e) });
+        } finally { setBusy(false); }
+    };
+
+    return (
+        <section className="rounded-xl border bg-card p-4" data-testid="admin-system-tools">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                Database & LeetCode Sync Tools
+            </p>
+            <div className="flex flex-wrap gap-3">
+                <button onClick={handleMigrate} disabled={busy}
+                        className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                    <Database className="w-4 h-4" /> Seed JSON to Database
+                </button>
+                <button onClick={handleFetchAll} disabled={busy}
+                        className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                    <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} /> Fetch All from LeetCode
+                </button>
+            </div>
+            {msg && <p className={`mt-2 text-xs ${msg.ok ? "text-green-500" : "text-red-500"}`}>{msg.text}</p>}
+        </section>
+    );
+};
+
+// ── 3. User Role Management Row ────────────────────────────────────
+const UserRoleAction = ({ user, onAction }) => {
+    const [busy, setBusy] = useState(false);
+
+    const toggleRole = async () => {
+        if (!user.email) return alert("Cannot promote phone-only user.");
+        const newRole = user.role === "ADMIN" ? "USER" : "ADMIN";
+        if (!window.confirm(`Change ${user.email} role to ${newRole}?`)) return;
+
+        setBusy(true);
+        try {
+            await api.post("/auth/admin/promote", { email: user.email, role: newRole });
+            onAction();
+        } catch (e) {
+            alert(errMsg(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    if (!user.email) return <span className="text-xs text-muted-foreground">-</span>;
+
+    return (
+        <button onClick={toggleRole} disabled={busy}
+                className={`text-xs px-2 py-1 rounded border ${user.role === 'ADMIN' ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-primary/50 text-primary hover:bg-primary/10'} disabled:opacity-50`}>
+            {busy ? "..." : user.role === 'ADMIN' ? "Remove Admin" : "Make Admin"}
+        </button>
+    );
+};
+
+// ── Main Admin Page ────────────────────────────────────────────────
 export default function AdminPage() {
     const { user } = useAuth();
     const [d, setD] = useState(null);
@@ -82,8 +156,7 @@ export default function AdminPage() {
 
     const loadOverview = () => {
         setError(null);
-        api
-            .get("/admin/overview")
+        api.get("/admin/overview")
             .then(({ data }) => setD(data))
             .catch((e) => setError(errMsg(e)));
     };
@@ -91,54 +164,38 @@ export default function AdminPage() {
     useEffect(() => {
         if (!user) return;
         let alive = true;
-        api
-            .get("/admin/overview")
+        api.get("/admin/overview")
             .then(({ data }) => alive && setD(data))
             .catch((e) => alive && setError(errMsg(e)));
-        return () => {
-            alive = false;
-        };
+        return () => { alive = false; };
     }, [user]);
 
-    // Auth / role gates
-    if (user === false)
-        return <Navigate to="/login" state={{ from: "/admin" }} replace />;
-    if (user && !user.isAdmin)
-        return <Navigate to="/" replace />;
+    // Guards
+    if (user === false) return <Navigate to="/login" state={{ from: "/admin" }} replace />;
+    if (user && !user.isAdmin) return <Navigate to="/" replace />;
 
-    if (error)
-        return (
-            <div className="p-10 text-hard text-sm" data-testid="admin-error">
-                {error}
-            </div>
-        );
-    if (!d)
-        return (
-            <div className="p-10 text-muted-foreground text-sm" data-testid="admin-loading">
-                Loading…
-            </div>
-        );
+    if (error) return <div className="p-10 text-red-500 text-sm">{error}</div>;
+    if (!d) return <div className="p-10 text-muted-foreground text-sm">Loading…</div>;
 
     return (
-        <main
-            className="relative z-10 max-w-7xl mx-auto px-6 py-10 space-y-6"
-            data-testid="admin-page"
-        >
+        <main className="relative z-10 max-w-7xl mx-auto px-6 py-10 space-y-6" data-testid="admin-page">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
                 <div>
-                    <h1 className="font-heading text-3xl font-bold tracking-tight">
-                        Users &amp; activity
-                    </h1>
+                    <h1 className="font-heading text-3xl font-bold tracking-tight">Admin Control Center</h1>
                     <p className="text-xs text-muted-foreground mt-1">
-                        Admin-only control panel. Add problems and monitor platform activity.
+                        Manage problems, sync data, and control user permissions.
                     </p>
                 </div>
             </div>
 
-            {/* ── Problem adder ──────────────────────────────────────── */}
-            <AddProblemsPanel onAdded={loadOverview} />
+            {/* Action Panels */}
+            <div className="grid lg:grid-cols-2 gap-4">
+                <AddProblemsPanel onAdded={loadOverview} />
+                <SystemToolsPanel onMigrated={loadOverview} />
+            </div>
 
-            {/* ── Stats row ─────────────────────────────────────────── */}
+            {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <Stat icon={Users}    label="Total users"       value={d.totalUsers}       id="users"  />
                 <Stat icon={Activity} label="Active (7 days)"   value={d.activeUsers7d}    id="active" />
@@ -147,18 +204,14 @@ export default function AdminPage() {
                 <Stat icon={Send}     label="Submissions (24h)" value={d.submissions24h}   id="subs"   />
             </div>
 
-            {/* ── Users table ───────────────────────────────────────── */}
+            {/* Users Table (Added Role Column) */}
             <div className="rounded-xl border bg-card overflow-x-auto">
                 <table className="w-full text-sm" data-testid="admin-users-table">
                     <thead className="text-xs uppercase tracking-wider text-muted-foreground border-b">
                     <tr>
-                        {["User", "Contact", "Login methods", "Logins", "Last active", "Solved", "Subs", "Last IP"].map(
-                            (h) => (
-                                <th key={h} className="text-left font-semibold px-4 py-3">
-                                    {h}
-                                </th>
-                            )
-                        )}
+                        {["User", "Contact", "Role / Action", "Logins", "Last active", "Solved", "Subs", "Last IP"].map((h) => (
+                            <th key={h} className="text-left font-semibold px-4 py-3">{h}</th>
+                        ))}
                     </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -172,8 +225,13 @@ export default function AdminPage() {
                                 <div>{u.email || "—"}</div>
                                 <div className="text-muted-foreground">{u.phone || ""}</div>
                             </td>
-                            <td className="px-4 py-3 text-xs">
-                                {(u.providers || [u.provider]).join(", ")}
+                            <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${u.role === 'ADMIN' ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                                        {u.role || "USER"}
+                                    </span>
+                                    <UserRoleAction user={u} onAction={loadOverview} />
+                                </div>
                             </td>
                             <td className="px-4 py-3">{u.login_count || 0}</td>
                             <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -181,74 +239,39 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3">{u.solved}</td>
                             <td className="px-4 py-3">{u.submissions}</td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground">
-                                {u.last_ip || "—"}
-                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">{u.last_ip || "—"}</td>
                         </tr>
                     ))}
                     {d.users.length === 0 && (
-                        <tr>
-                            <td colSpan={8} className="px-4 py-6 text-center text-xs text-muted-foreground">
-                                No users yet.
-                            </td>
-                        </tr>
+                        <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-muted-foreground">No users yet.</td></tr>
                     )}
                     </tbody>
                 </table>
             </div>
 
-            {/* ── Notifications + Events ────────────────────────────── */}
+            {/* Notifications + Events */}
             <div className="grid lg:grid-cols-2 gap-6">
-                <div className="rounded-xl border bg-card p-4" data-testid="admin-notifications">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                        Welcome messages (email / SMS)
-                    </p>
+                {/* Same as before... */}
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Welcome messages</p>
                     <div className="divide-y text-xs">
                         {d.notifications.map((n, i) => (
                             <div key={i} className="py-2 flex justify-between gap-3">
-                <span>
-                  <span className="font-semibold">{n.kind}</span> · {n.channel} → {n.to}
-                </span>
-                                <span
-                                    className={
-                                        n.status === "sent"
-                                            ? "text-easy"
-                                            : n.status === "mocked"
-                                                ? "text-medium"
-                                                : "text-hard"
-                                    }
-                                    title={n.error || ""}
-                                >
-                  {n.status} · {timeAgo(n.created_at)}
-                </span>
+                                <span><span className="font-semibold">{n.kind}</span> · {n.channel} → {n.to}</span>
+                                <span className={n.status === "sent" ? "text-green-500" : "text-red-500"}>{n.status} · {timeAgo(n.created_at)}</span>
                             </div>
                         ))}
-                        {!d.notifications.length && (
-                            <p className="text-muted-foreground py-2">None yet.</p>
-                        )}
                     </div>
                 </div>
-
-                <div className="rounded-xl border bg-card p-4" data-testid="admin-events">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                        Recent tracking events
-                    </p>
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Recent events</p>
                     <div className="divide-y text-xs max-h-96 overflow-auto">
                         {d.events.map((e, i) => (
                             <div key={i} className="py-2 flex justify-between gap-3">
-                <span>
-                  <span className="font-semibold">{e.type}</span>{" "}
-                    {e.path || e.method || ""}{" "}
-                    <span className="text-muted-foreground">{e.user_id || "guest"}</span>
-                </span>
-                                <span className="text-muted-foreground whitespace-nowrap">
-                  {timeAgo(e.created_at)}
-                </span>
+                                <span><span className="font-semibold">{e.type}</span> {e.path || ""}</span>
+                                <span className="text-muted-foreground">{timeAgo(e.created_at)}</span>
                             </div>
                         ))}
-                        {!d.events.length && (
-                            <p className="text-muted-foreground py-2">None yet.</p>
-                        )}
                     </div>
                 </div>
             </div>
