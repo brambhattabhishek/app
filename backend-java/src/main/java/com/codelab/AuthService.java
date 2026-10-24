@@ -1,7 +1,6 @@
 package com.codelab;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.HttpServletRequest;
 import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,8 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import static com.mongodb.client.model.Filters.eq;
@@ -20,25 +17,18 @@ import static com.mongodb.client.model.Filters.eq;
 public class AuthService {
     @Autowired MongoTemplate mongo;
     @Autowired Notifier notifier;
-    private final SecretKey key = Keys.hmacShaKeyFor(System.getenv("JWT_SECRET").getBytes(StandardCharsets.UTF_8));
+    @Autowired JwtService jwtService; // ★ JWTService inject kiya
+
     static final long ACTIVE_TOUCH_MS = 5 * 60_000L;
 
-    // ★ UPDATED: Ab JWT token mein role bhi jayega
-    public String token(String uid, String email, String role) {
-        return Jwts.builder()
-                .subject(uid)
-                .claim("email", email)
-                .claim("role", role == null ? "USER" : role) // ROLE JWT MEIN ADD KIYA
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + 7L * 86_400_000))
-                .signWith(key)
-                .compact();
-    }
+    // ★ PURANA token() METHOD HATA DIYA, AB JwtService SIGN KAREGA
 
     public Document optional(String header) {
         if (header == null || !header.startsWith("Bearer ")) return null;
         try {
-            String uid = Jwts.parser().verifyWith(key).build().parseSignedClaims(header.substring(7)).getPayload().getSubject();
+            var claims = jwtService.parse(header.substring(7));
+            String uid = claims.getSubject();
+
             Document u = mongo.getCollection("users").find(eq("user_id", uid)).first();
             if (u != null) {
                 Date last = u.getDate("last_active_at");
@@ -57,13 +47,11 @@ public class AuthService {
         return u;
     }
 
-    // ★ UPDATED: Database ka role field check karega
     public static boolean isAdmin(Document u) {
         if (u == null) return false;
         String role = u.getString("role");
         if ("ADMIN".equalsIgnoreCase(role)) return true;
 
-        // Fallback: check legacy ADMIN_EMAILS env
         String admins = Optional.ofNullable(System.getenv("ADMIN_EMAILS")).orElse("");
         return u.getString("email") != null && Arrays.asList(admins.toLowerCase().split(",")).contains(u.getString("email").toLowerCase());
     }
@@ -75,9 +63,9 @@ public class AuthService {
             m.put(k, u.get(k));
 
         boolean admin = isAdmin(u);
-        m.put("role", u.getString("role") == null ? "USER" : u.getString("role")); // Role explicitly bhejein
+        m.put("role", u.getString("role") == null ? "USER" : u.getString("role"));
         m.put("is_admin", admin);
-        m.put("isAdmin", admin); // Frontend isAdmin dhundh raha hai
+        m.put("isAdmin", admin);
         return m;
     }
 
@@ -90,18 +78,21 @@ public class AuthService {
         Date prevActive = u.getDate("last_active_at");
         Date now = new Date();
         String ua = Optional.ofNullable(req.getHeader("User-Agent")).orElse("");
+
         mongo.getCollection("users").updateOne(eq("user_id", u.getString("user_id")), new Document("$set",
                 new Document("last_login_at", now).append("last_active_at", now).append("last_ip", ip(req)).append("last_user_agent", ua))
                 .append("$inc", new Document("login_count", 1)).append("$addToSet", new Document("providers", method)));
+
         String greeting = notifier.greet(u, isNew, prevActive);
+
         mongo.getCollection("events").insertOne(new Document("type", "login").append("user_id", u.getString("user_id")).append("method", method)
                 .append("new_user", isNew).append("greeting", greeting).append("ip", ip(req)).append("ua", ua).append("created_at", now));
 
         Document fresh = mongo.getCollection("users").find(eq("user_id", u.getString("user_id"))).first();
 
-        // ★ Yahan role pass kiya token() method mein
+        // ★ JwtService se token banwa rahe hain
         String role = fresh.getString("role") == null ? "USER" : fresh.getString("role");
-        String token = token(fresh.getString("user_id"), fresh.getString("email"), role);
+        String token = jwtService.sign(fresh.getString("user_id"), fresh.getString("email"), role);
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("token", token);

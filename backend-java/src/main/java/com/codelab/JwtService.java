@@ -18,7 +18,7 @@ public class JwtService {
     private String secret;
 
     @Value("${jwt.expiry-ms:86400000}")
-    private long expiryMs;   // default 24h
+    private long expiryMs;
 
     private SecretKey key() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
@@ -28,7 +28,7 @@ public class JwtService {
         Date now = new Date();
         return Jwts.builder()
                 .subject(userId)
-                .claims(Map.of("email", email, "role", role))
+                .claims(Map.of("email", email, "role", role == null ? "USER" : role))
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expiryMs))
                 .signWith(key())

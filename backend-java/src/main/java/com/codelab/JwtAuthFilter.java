@@ -1,12 +1,12 @@
 package com.codelab;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,7 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -38,13 +38,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.parse(token);
             String userId = claims.getSubject();
-            String role   = claims.get("role", String.class);      // "ADMIN" | "USER"
+            String role   = claims.get("role", String.class); // ★ Role extract kiya
             String email  = claims.get("email", String.class);
 
-            // Spring expects ROLE_ prefix for hasRole("ADMIN")
+            // Spring ko ROLE_ prefix chahiye hota hai hasRole() ke liye
             List<SimpleGrantedAuthority> authorities =
                     role == null ? List.of()
-                            : List.of(new SimpleGrantedAuthority("ROLE_" + role));
+                            : List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
 
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(
@@ -54,7 +54,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             SecurityContextHolder.getContext().setAuthentication(auth);
         } catch (Exception ignored) {
-            // invalid/expired token → proceed unauthenticated
+            // invalid token → unauthenticated
+            log.error("JWT Verification FAILED: {}", ignored.getMessage());
         }
 
         chain.doFilter(req, res);
