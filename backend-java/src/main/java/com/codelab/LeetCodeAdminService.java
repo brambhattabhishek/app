@@ -6,9 +6,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -49,15 +51,41 @@ public class LeetCodeAdminService {
         this.sessionCookie = cookie == null ? "" : cookie.trim();
     }
 
+    // ★ Paths ab static nahi, method mein resolve honge
+    private final ResourceLoader resourceLoader;
+
+    // Helper method — path resolve karo
+    private Path resolvePath(String filename) throws IOException {
+        // Try to read from classpath first
+        try {
+            org.springframework.core.io.Resource res =
+                    resourceLoader.getResource("classpath:" + filename);
+            if (res.exists()) {
+                File file = res.getFile();
+                if (file.canWrite()) return file.toPath();
+            }
+        } catch (Exception ignored) {}
+
+        // Fallback: current working directory
+        Path fallback = Paths.get("data", filename);
+        Files.createDirectories(fallback.getParent());
+        if (!Files.exists(fallback)) Files.writeString(fallback, filename.endsWith("meta.json") ? "{}" : "[]");
+        return fallback;
+    }
+
     public boolean isFetchingAll() { return fetchingAll.get(); }
 
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
         if (input == null || input.isBlank()) return added;
 
-        ArrayNode p1Json   = readArray(P1);
-        ArrayNode p2Json   = readArray(P2);
-        ObjectNode metaJson = readObject(PM);
+        Path p1Path = resolvePath("problems.json");
+        Path p2Path = resolvePath("problems2.json");
+        Path pmPath = resolvePath("problems_meta.json");
+
+        ArrayNode p1Json   = readArray(p1Path);
+        ArrayNode p2Json   = readArray(p2Path);
+        ObjectNode metaJson = readObject(pmPath);
 
         for (String token : input.replace(",", " ").split("\\s+")) {
             if (token.isBlank()) continue;
@@ -84,15 +112,17 @@ public class LeetCodeAdminService {
                 Problem problem  = toProblem(num, d);
                 ProblemMeta meta = toMeta(num, d);
 
+                // ★ MongoDB mein save
                 problemRepo.save(problem);
                 metaRepo.save(meta);
 
+                // ★ JSON files mein bhi save
                 replaceOrAdd(p1Json, num, problemToJson(problem));
                 replaceOrAdd(p2Json, num, problemMetaToJson2(problem, meta));
                 metaJson.set(String.valueOf(num), metaToJson(meta));
 
                 added.add(num);
-                log.info("✓ Saved #{} {} (fn={}, params={}, samples={})",
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}) to DB + JSON",
                         num, problem.getTitle(), problem.getFn(),
                         problem.getParams().size(), problem.getSampleTests().size());
 
@@ -107,12 +137,12 @@ public class LeetCodeAdminService {
             }
         }
 
-        write(P1, p1Json);
-        write(P2, p2Json);
-        write(PM, metaJson);
+        // ★ Dono JSON files write
+        write(p1Path, p1Json);
+        write(p2Path, p2Json);
+        write(pmPath, metaJson);
         return added;
     }
-
     @Async("taskExecutor")
     public void fetchAllAsync() {
         try { fetchAll(); } catch (Exception e) { log.error("fetchAll background failure", e); }
@@ -121,10 +151,14 @@ public class LeetCodeAdminService {
     public int fetchAll() throws Exception {
         if (!fetchingAll.compareAndSet(false, true)) return 0;
         try {
+            Path p1Path = resolvePath("problems.json");
+            Path p2Path = resolvePath("problems2.json");
+            Path pmPath = resolvePath("problems_meta.json");
+
             JsonNode list = graphql("""
-                query { problemsetQuestionList: questionList(categorySlug:"",limit:3000,skip:0,filters:{}) {
-                  total: totalNum questions: data { frontendQuestionId titleSlug difficulty topicTags { name } }
-                }}""", "{}");
+            query { problemsetQuestionList: questionList(categorySlug:"",limit:3000,skip:0,filters:{}) {
+              total: totalNum questions: data { frontendQuestionId titleSlug difficulty topicTags { name } }
+            }}""", "{}");
 
             ArrayNode p1Json    = MAPPER.createArrayNode();
             ArrayNode p2Json    = MAPPER.createArrayNode();
@@ -163,9 +197,9 @@ public class LeetCodeAdminService {
                 }
             }
 
-            write(P1, p1Json);
-            write(P2, p2Json);
-            write(PM, metaJson);
+            write(p1Path, p1Json);
+            write(p2Path, p2Json);
+            write(pmPath, metaJson);
             return count;
         } finally {
             fetchingAll.set(false);
@@ -174,12 +208,13 @@ public class LeetCodeAdminService {
 
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
-            query($s:String!){question(titleSlug:$s){
-              questionFrontendId title titleSlug content difficulty
-              topicTags{name} hints
-              codeSnippets{lang langSlug code}
-              sampleTestCase metaData
-            }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
+        query($s:String!){question(titleSlug:$s){
+          questionFrontendId title titleSlug content difficulty
+          topicTags{name} hints
+          codeSnippets{lang langSlug code}
+          sampleTestCase metaData
+          companyTags { name slug }   // ← Yeh add karo
+        }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
         return root.path("data").path("question");
     }
 
@@ -434,9 +469,13 @@ public class LeetCodeAdminService {
         if (d.path("hints").isArray())
             d.path("hints").forEach(h -> hints.add(h.asText()));
 
+        List<String> companies = new ArrayList<>();
+        if (d.path("companyTags").isArray())
+            d.path("companyTags").forEach(c -> companies.add(c.path("name").asText()));
+
         return ProblemMeta.builder()
                 .id(num)
-                .companies(new ArrayList<>())
+                .companies(companies)
                 .hints(hints)
                 .edgeCases(new ArrayList<>())
                 .explanation("")
@@ -510,11 +549,10 @@ public class LeetCodeAdminService {
         }
         arr.add(obj);
     }
-
     public int migrateJsonToMongo() throws IOException {
-        ArrayNode p1Json = readArray(P1);
-        ArrayNode p2Json = readArray(P2);
-        ObjectNode pm    = readObject(PM);
+        ArrayNode p1Json = readArray(resolvePath("problems.json"));
+        ArrayNode p2Json = readArray(resolvePath("problems2.json"));
+        ObjectNode pm    = readObject(resolvePath("problems_meta.json"));
 
         int problemsSaved = 0;
         for (JsonNode j : p1Json) {
@@ -547,7 +585,6 @@ public class LeetCodeAdminService {
         }
         return problemsSaved;
     }
-
     private ProblemMeta buildMetaFromJson(int id, JsonNode j) {
         List<String> hints = new ArrayList<>();
         if (j.path("hints").isArray()) j.path("hints").forEach(h -> hints.add(h.asText()));
