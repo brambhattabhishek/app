@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
     Users, Activity, LogIn, Eye, Send, Plus, Loader2,
-    Database, RefreshCw, ShieldCheck, UserMinus
+    Database, RefreshCw, ShieldCheck
 } from "lucide-react";
 import { api, errMsg, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -39,16 +39,16 @@ const AddProblemsPanel = ({ onAdded }) => {
     };
 
     return (
-        <section className="rounded-xl border bg-card p-4" data-testid="admin-add-problems">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Add LeetCode Problems (Comma or space separated)
+        <section className="rounded-xl border border-primary/20 bg-card p-4 shadow-sm" data-testid="admin-add-problems">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">
+                Add LeetCode Problems (Admin Only)
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
                 <input
                     value={numbers}
                     onChange={(e) => setNumbers(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
-                    placeholder="e.g. 1 3 5  or  1,3,5  (problem numbers)"
+                    placeholder="e.g. 1 3 5  or  1,3,5"
                     className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                     disabled={busy}
                 />
@@ -69,17 +69,17 @@ const AddProblemsPanel = ({ onAdded }) => {
     );
 };
 
-// ── 2. System Tools Panel (Migrate & Fetch All) ────────────────────
+// ── 2. System Tools Panel ──────────────────────────────────────────
 const SystemToolsPanel = ({ onMigrated }) => {
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
 
     const handleMigrate = async () => {
-        if (!window.confirm("This will copy all local JSON problems into MongoDB. Proceed?")) return;
+        if (!window.confirm("Copy all local JSON problems into MongoDB?")) return;
         setBusy(true); setMsg(null);
         try {
             const { data } = await api.post("/admin/leetcode/migrate-json");
-            setMsg({ ok: true, text: `Successfully migrated ${data.migrated} problems to Database.` });
+            setMsg({ ok: true, text: `Migrated ${data.migrated} problems to DB.` });
             onMigrated?.();
         } catch (e) {
             setMsg({ ok: false, text: errMsg(e) });
@@ -87,30 +87,28 @@ const SystemToolsPanel = ({ onMigrated }) => {
     };
 
     const handleFetchAll = async () => {
-        if (!window.confirm("This will fetch ALL problems from LeetCode. It runs in the background and takes 30-60 minutes. Proceed?")) return;
+        if (!window.confirm("Fetch ALL problems from LeetCode? Takes 30-60 min in background.")) return;
         setBusy(true); setMsg(null);
         try {
             await api.post("/admin/leetcode/fetch-all", {});
-            setMsg({ ok: true, text: "Full sync started in the background. Check server logs for progress." });
+            setMsg({ ok: true, text: "Background sync started. Check logs." });
         } catch (e) {
             const is409 = e?.response?.status === 409;
-            setMsg({ ok: false, text: is409 ? "A fetch is already running. Please wait." : errMsg(e) });
+            setMsg({ ok: false, text: is409 ? "Already running." : errMsg(e) });
         } finally { setBusy(false); }
     };
 
     return (
         <section className="rounded-xl border bg-card p-4" data-testid="admin-system-tools">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Database & LeetCode Sync Tools
+                Database & Sync Tools
             </p>
             <div className="flex flex-wrap gap-3">
-                <button onClick={handleMigrate} disabled={busy}
-                        className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
-                    <Database className="w-4 h-4" /> Seed JSON to Database
+                <button onClick={handleMigrate} disabled={busy} className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                    <Database className="w-4 h-4" /> Seed JSON → DB
                 </button>
-                <button onClick={handleFetchAll} disabled={busy}
-                        className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
-                    <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} /> Fetch All from LeetCode
+                <button onClick={handleFetchAll} disabled={busy} className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                    <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} /> Fetch All
                 </button>
             </div>
             {msg && <p className={`mt-2 text-xs ${msg.ok ? "text-green-500" : "text-red-500"}`}>{msg.text}</p>}
@@ -118,14 +116,14 @@ const SystemToolsPanel = ({ onMigrated }) => {
     );
 };
 
-// ── 3. User Role Management Row ────────────────────────────────────
+// ── 3. User Role Action ────────────────────────────────────────────
 const UserRoleAction = ({ user, onAction }) => {
     const [busy, setBusy] = useState(false);
 
     const toggleRole = async () => {
         if (!user.email) return alert("Cannot promote phone-only user.");
         const newRole = user.role === "ADMIN" ? "USER" : "ADMIN";
-        if (!window.confirm(`Change ${user.email} role to ${newRole}?`)) return;
+        if (!window.confirm(`Change ${user.email} to ${newRole}?`)) return;
 
         setBusy(true);
         try {
@@ -138,11 +136,11 @@ const UserRoleAction = ({ user, onAction }) => {
         }
     };
 
-    if (!user.email) return <span className="text-xs text-muted-foreground">-</span>;
+    if (!user.email) return <span className="text-xs text-muted-foreground">—</span>;
 
     return (
         <button onClick={toggleRole} disabled={busy}
-                className={`text-xs px-2 py-1 rounded border ${user.role === 'ADMIN' ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-primary/50 text-primary hover:bg-primary/10'} disabled:opacity-50`}>
+                className={`text-xs px-2 py-1 rounded border transition-colors ${user.role === 'ADMIN' ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-primary/50 text-primary hover:bg-primary/10'} disabled:opacity-50`}>
             {busy ? "..." : user.role === 'ADMIN' ? "Remove Admin" : "Make Admin"}
         </button>
     );
@@ -172,10 +170,17 @@ export default function AdminPage() {
 
     // Guards
     if (user === false) return <Navigate to="/login" state={{ from: "/admin" }} replace />;
-    if (user && !user.isAdmin) return <Navigate to="/" replace />;
+    // Agar backend se isAdmin nahi aa raha, toh frontend block ho jayega.
+    // Par backend mein fix aane tak, ye role check ensure karega ki Admin ko block na kare.
+    if (user && !user.isAdmin && user.role !== "ADMIN") return <Navigate to="/" replace />;
 
-    if (error) return <div className="p-10 text-red-500 text-sm">{error}</div>;
-    if (!d) return <div className="p-10 text-muted-foreground text-sm">Loading…</div>;
+    if (error) return (
+        <div className="p-10 text-center">
+            <p className="text-red-500 text-sm mb-4">{error}</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-primary text-white rounded-md text-sm">Retry</button>
+        </div>
+    );
+    if (!d) return <div className="p-10 text-muted-foreground text-sm text-center">Loading…</div>;
 
     return (
         <main className="relative z-10 max-w-7xl mx-auto px-6 py-10 space-y-6" data-testid="admin-page">
@@ -183,9 +188,7 @@ export default function AdminPage() {
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
                 <div>
                     <h1 className="font-heading text-3xl font-bold tracking-tight">Admin Control Center</h1>
-                    <p className="text-xs text-muted-foreground mt-1">
-                        Manage problems, sync data, and control user permissions.
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Manage problems, sync data, and control user permissions.</p>
                 </div>
             </div>
 
@@ -204,7 +207,7 @@ export default function AdminPage() {
                 <Stat icon={Send}     label="Submissions (24h)" value={d.submissions24h}   id="subs"   />
             </div>
 
-            {/* Users Table (Added Role Column) */}
+            {/* Users Table */}
             <div className="rounded-xl border bg-card overflow-x-auto">
                 <table className="w-full text-sm" data-testid="admin-users-table">
                     <thead className="text-xs uppercase tracking-wider text-muted-foreground border-b">
@@ -227,8 +230,8 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${u.role === 'ADMIN' ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
-                                        {u.role || "USER"}
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${u.role === 'ADMIN' || u.isAdmin ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                                        {u.role || (u.isAdmin ? "ADMIN" : "USER")}
                                     </span>
                                     <UserRoleAction user={u} onAction={loadOverview} />
                                 </div>
@@ -251,7 +254,6 @@ export default function AdminPage() {
 
             {/* Notifications + Events */}
             <div className="grid lg:grid-cols-2 gap-6">
-                {/* Same as before... */}
                 <div className="rounded-xl border bg-card p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Welcome messages</p>
                     <div className="divide-y text-xs">
