@@ -92,7 +92,9 @@ public class LeetCodeAdminService {
                 metaJson.set(String.valueOf(num), metaToJson(meta));
 
                 added.add(num);
-                log.info("✓ Saved #{} {} (samples: {})", num, problem.getTitle(), problem.getSampleTests().size());
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={})",
+                        num, problem.getTitle(), problem.getFn(),
+                        problem.getParams().size(), problem.getSampleTests().size());
 
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
@@ -229,7 +231,7 @@ public class LeetCodeAdminService {
         return root;
     }
 
-    // ★★★ FIXED: Sample tests parsing ★★★
+    // ★★★ COMPLETE FIX: codeSnippets + metaData + description parsing ★★★
     private Problem toProblem(int num, JsonNode d) {
         List<String> tags = new ArrayList<>();
         if (d.path("topicTags").isArray())
@@ -240,15 +242,61 @@ public class LeetCodeAdminService {
         String ret = "";
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
 
-        // 1. metaData se fn, params, ret nikaalein
+        // ═══════════ STEP 1: codeSnippets se function signature ═══════════
+        JsonNode snippets = d.path("codeSnippets");
+        if (snippets.isArray() && snippets.size() > 0) {
+            // JavaScript snippet prefer karein
+            JsonNode jsSnippet = null;
+            for (JsonNode s : snippets) {
+                String langSlug = s.path("langSlug").asText("").toLowerCase();
+                if (langSlug.equals("javascript") || langSlug.equals("js")) {
+                    jsSnippet = s;
+                    break;
+                }
+            }
+            if (jsSnippet == null) jsSnippet = snippets.get(0);
+
+            String code = jsSnippet.path("code").asText("");
+            log.debug("Snippet for #{}: {}", num, code.length() > 200 ? code.substring(0, 200) : code);
+
+            // Pattern: "var fnName = function(arg1, arg2) {" OR "var fnName = function(arg1, arg2) {"
+            Pattern jsPattern = Pattern.compile(
+                    "(?:var|let|const)\\s+(\\w+)\\s*=\\s*function\\s*\\(([^)]*)\\)",
+                    Pattern.DOTALL
+            );
+            Matcher m = jsPattern.matcher(code);
+            if (m.find()) {
+                fn = m.group(1).trim();
+                String argsStr = m.group(2).trim();
+                if (!argsStr.isEmpty()) {
+                    for (String arg : argsStr.split(",")) {
+                        String argName = arg.trim();
+                        if (!argName.isEmpty()) {
+                            params.add(new Problem.Param(argName, guessType(argName)));
+                        }
+                    }
+                }
+            }
+
+            // Return type: `/** @return {boolean} */` ya JS keyword se
+            Pattern retPattern = Pattern.compile("@return\\s*\\{([^}]+)\\}");
+            Matcher rm = retPattern.matcher(code);
+            if (rm.find()) {
+                ret = jsTypeToJava(rm.group(1).trim());
+            }
+        }
+
+        // ═══════════ STEP 2: metaData override (agar available) ═══════════
         try {
             String metaDataStr = d.path("metaData").asText("");
             if (!metaDataStr.isEmpty()) {
                 JsonNode meta = MAPPER.readTree(metaDataStr);
-                fn = meta.path("name").asText("");
+                String metaFn = meta.path("name").asText("");
+                if (!metaFn.isEmpty()) fn = metaFn;
 
                 JsonNode paramsArr = meta.path("params");
-                if (paramsArr.isArray()) {
+                if (paramsArr.isArray() && paramsArr.size() > 0) {
+                    params.clear();
                     for (JsonNode p : paramsArr) {
                         params.add(new Problem.Param(
                                 p.path("name").asText(""),
@@ -256,22 +304,21 @@ public class LeetCodeAdminService {
                         ));
                     }
                 }
-                ret = meta.path("return").path("type").asText("");
+                String metaRet = meta.path("return").path("type").asText("");
+                if (!metaRet.isEmpty()) ret = metaRet;
             }
         } catch (Exception e) {
             log.warn("metaData parse failed for #{}: {}", num, e.getMessage());
         }
 
-        // 2. Description HTML se Input/Output pairs nikaalein
+        // ═══════════ STEP 3: Description se Input/Output pairs ═══════════
         String description = d.path("content").asText("");
         if (!description.isEmpty()) {
-            // LeetCode HTML ko plain text mein convert karein
-            // <pre> blocks ko specially handle karein
             String text = description
                     .replaceAll("<br\\s*/?>", "\n")
                     .replaceAll("</p>", "\n")
                     .replaceAll("</pre>", "\n")
-                    .replaceAll("<[^>]*>", " ")  // baaki tags hatao
+                    .replaceAll("<[^>]*>", " ")
                     .replace("&quot;", "\"")
                     .replace("&lt;", "<")
                     .replace("&gt;", ">")
@@ -280,29 +327,17 @@ public class LeetCodeAdminService {
                     .replace("&#39;", "'")
                     .replace("&apos;", "'");
 
-            // "Input:" aur "Output:" ke pairs dhundhein
-            // Regex: Input: X Output: Y (X aur Y dono multiline ho sakte hain)
             Pattern ioPattern = Pattern.compile(
                     "Input:\\s*(.+?)\\s*Output:\\s*(.+?)(?=Explanation:|Example\\s+\\d|Constraints:|\\z)",
                     Pattern.DOTALL
             );
             Matcher m = ioPattern.matcher(text);
             while (m.find()) {
-                String input = m.group(1).trim()
-                        .replaceAll("\\s+", " ")
-                        .replaceAll("^\\s+|\\s+$", "");
-                String expected = m.group(2).trim()
-                        .replaceAll("\\s+", " ")
-                        .replaceAll("^\\s+|\\s+$", "");
-
-                // Skip empty
+                String input = m.group(1).trim().replaceAll("\\s+", " ");
+                String expected = m.group(2).trim().replaceAll("\\s+", " ");
                 if (input.isEmpty() || expected.isEmpty()) continue;
-
-                // Duplicate check
-                boolean dup = sampleTests.stream()
-                        .anyMatch(st -> st.getInput().equals(input));
+                boolean dup = sampleTests.stream().anyMatch(st -> st.getInput().equals(input));
                 if (dup) continue;
-
                 sampleTests.add(Problem.SampleTest.builder()
                         .input(input)
                         .expected(expected)
@@ -310,7 +345,7 @@ public class LeetCodeAdminService {
             }
         }
 
-        // 3. Fallback: agar description se nahi mile toh sampleTestCase se try karein
+        // ═══════════ STEP 4: sampleTestCase fallback ═══════════
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -329,6 +364,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 5: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -352,6 +388,45 @@ public class LeetCodeAdminService {
                         .code("")
                         .build())
                 .build();
+    }
+
+    private String guessType(String argName) {
+        String lower = argName.toLowerCase();
+        if (lower.equals("n") || lower.equals("k") || lower.equals("target") ||
+                lower.equals("val") || lower.equals("x") || lower.equals("y") ||
+                lower.equals("num") || lower.equals("index") || lower.equals("i")) {
+            return "int";
+        }
+        if (lower.equals("s") || lower.equals("t") || lower.equals("word") ||
+                lower.equals("word1") || lower.equals("word2") || lower.equals("str") ||
+                lower.equals("text") || lower.equals("pattern")) {
+            return "string";
+        }
+        if (lower.contains("nums") || lower.contains("arr") || lower.contains("array") ||
+                lower.contains("prices") || lower.contains("heights") || lower.equals("a") ||
+                lower.equals("b") || lower.equals("digits")) {
+            return "int[]";
+        }
+        if (lower.equals("p") || lower.equals("q") || lower.equals("root") ||
+                lower.equals("node") || lower.equals("head") || lower.equals("tree")) {
+            return "TreeNode";
+        }
+        if (lower.equals("matrix") || lower.equals("grid") || lower.equals("board")) {
+            return "int[][]";
+        }
+        return "any";
+    }
+
+    private String jsTypeToJava(String jsType) {
+        switch (jsType.toLowerCase()) {
+            case "number": return "int";
+            case "string": return "string";
+            case "boolean": return "bool";
+            case "void": return "void";
+            case "number[]": return "int[]";
+            case "string[]": return "string[]";
+            default: return jsType;
+        }
     }
 
     private ProblemMeta toMeta(int num, JsonNode d) {
