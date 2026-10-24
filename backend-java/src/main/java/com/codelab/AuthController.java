@@ -9,6 +9,7 @@ import org.bson.conversions.Bson;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -48,9 +49,27 @@ public class AuthController {
 
     static String newId() { return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12); }
 
+    // ★ Every new user gets an explicit role. Default = "USER".
     static Document newUser(String name, String provider) {
-        return new Document("user_id", newId()).append("name", name).append("provider", provider)
-                .append("interests", new ArrayList<>()).append("created_at", new Date());
+        return new Document("user_id", newId())
+                .append("name", name)
+                .append("provider", provider)
+                .append("role", "USER")                       // ★ NEW
+                .append("interests", new ArrayList<>())
+                .append("created_at", new Date());
+    }
+
+    // ★ Helper — normalise role for public-facing payloads
+    static String roleOf(Document u) {
+        String r = u.getString("role");
+        return r == null ? "USER" : r.toUpperCase();
+    }
+
+    // ★ True admin bootstrap — only the address in ADMIN_EMAIL env var can auto-become admin.
+    //   Set ADMIN_EMAIL=admin@yourdomain.com in the environment before first registration.
+    static boolean isBootstrapAdminEmail(String email) {
+        String adminEmail = Notifier.env("ADMIN_EMAIL");
+        return adminEmail != null && email != null && adminEmail.trim().equalsIgnoreCase(email.trim());
     }
 
     @GetMapping("/providers")
@@ -70,8 +89,13 @@ public class AuthController {
         if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) throw err(HttpStatus.BAD_REQUEST, "Enter a valid email");
         if (r.password() == null || r.password().length() < 6) throw err(HttpStatus.BAD_REQUEST, "Password must be at least 6 characters");
         if (users().find(eq("email", email)).first() != null) throw err(HttpStatus.CONFLICT, "Email already registered");
+
         String name = r.name() == null || r.name().isBlank() ? email.split("@")[0] : r.name().trim();
         Document u = newUser(name, "email").append("email", email).append("password_hash", enc.encode(r.password()));
+
+        // ★ Bootstrap: if this email matches ADMIN_EMAIL, mark as ADMIN immediately.
+        if (isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
+
         users().insertOne(u);
         return auth.login(u, true, "email", req);
     }
@@ -92,12 +116,54 @@ public class AuthController {
                     ? "This account uses social / phone login. Use that method instead." : "Invalid email or password");
         }
         attempts.deleteOne(eq("identifier", ident));
+
+        // ★ Backfill role on legacy users who registered before roles existed.
+        if (u.getString("role") == null) {
+            String role = isBootstrapAdminEmail(email) ? "ADMIN" : "USER";
+            users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
+            u.put("role", role);
+        }
+
         return auth.login(u, false, "email", req);
     }
 
     @GetMapping("/me")
     public Map<String, Object> me(@RequestHeader(value = "Authorization", required = false) String h) {
-        return AuthService.publicUser(auth.require(h));
+        Document u = auth.require(h);
+        Map<String, Object> out = AuthService.publicUser(u);
+        out.put("isAdmin", "ADMIN".equals(roleOf(u)));        // ★ frontend guard uses this
+        return out;
+    }
+
+    /**
+     * ★ Admin-only: promote / demote any user by email.
+     * Called from Admin page. Body: { "email": "...", "role": "ADMIN" | "USER" }
+     */
+    @PostMapping("/admin/promote")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Map<String, Object> promote(@RequestBody Map<String, String> body) {
+        String email = body.getOrDefault("email", "").trim().toLowerCase();
+        String role  = body.getOrDefault("role", "USER").trim().toUpperCase();
+        if (!role.equals("ADMIN") && !role.equals("USER"))
+            throw err(HttpStatus.BAD_REQUEST, "role must be ADMIN or USER");
+        Document u = users().find(eq("email", email)).first();
+        if (u == null) throw err(HttpStatus.NOT_FOUND, "No user with that email");
+        users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
+        return Map.of("email", email, "role", role, "ok", true);
+    }
+
+    /** ★ Admin-only: list every admin. Useful for the Admin panel "who can add problems" card. */
+    @GetMapping("/admin/list-admins")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<Map<String, Object>> listAdmins() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Document u : users().find(eq("role", "ADMIN")))
+            out.add(Map.of(
+                    "user_id", u.getString("user_id"),
+                    "email",   u.getString("email") == null ? "" : u.getString("email"),
+                    "name",    u.getString("name")  == null ? "" : u.getString("name")
+            ));
+        return out;
     }
 
     /** Find by provider id, then link by verified email, else create. */
@@ -110,12 +176,18 @@ public class AuthController {
             u = newUser(name == null || name.isBlank() ? (email != null ? email.split("@")[0] : "Coder") : name, provider).append("picture", picture);
             if (email != null) u.append("email", email);
             if (idField != null) u.append(idField, idValue);
+            // ★ Social signup via bootstrap admin email also gets ADMIN
+            if (email != null && isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
             u.putAll(extra);
             users().insertOne(u);
         } else {
             Document set = new Document(extra);
             if (idField != null) set.append(idField, idValue);
             if (picture != null && u.getString("picture") == null) set.append("picture", picture);
+            // ★ Backfill role for social users from legacy accounts
+            if (u.getString("role") == null) {
+                set.append("role", email != null && isBootstrapAdminEmail(email) ? "ADMIN" : "USER");
+            }
             if (!set.isEmpty()) users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", set));
             u.putAll(set);
         }
@@ -173,7 +245,7 @@ public class AuthController {
                 "client_id", Notifier.env(c[0]), "client_secret", Notifier.env(c[1]));
         String tokenUrl = provider.equals("github") ? "https://github.com/login/oauth/access_token" : "https://www.linkedin.com/oauth/v2/accessToken";
         HttpResponse<String> tr = http.send(HttpRequest.newBuilder(URI.create(tokenUrl)).header("Accept", "application/json")
-                .header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(Notifier.form(body))).build(),
+                        .header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(Notifier.form(body))).build(),
                 HttpResponse.BodyHandlers.ofString());
         String access = om.readTree(tr.body()).path("access_token").asText(null);
         if (access == null) throw err(HttpStatus.UNAUTHORIZED, "Could not complete " + provider + " login");
