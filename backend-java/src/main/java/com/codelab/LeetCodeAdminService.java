@@ -41,10 +41,7 @@ public class LeetCodeAdminService {
     private final ProblemRepository     problemRepo;
     private final ProblemMetaRepository metaRepo;
 
-    /** In-memory session cookie — thread-safe. */
     private volatile String sessionCookie = "";
-
-    /** Guard against overlapping full-fetches. */
     private final AtomicBoolean fetchingAll = new AtomicBoolean(false);
 
     public void setSessionCookie(String cookie) {
@@ -55,11 +52,6 @@ public class LeetCodeAdminService {
         return fetchingAll.get();
     }
 
-    // ============================================================
-    //  PUBLIC API
-    // ============================================================
-
-    /** Add/replace one or more problems by number. Persists to Mongo AND JSON files. */
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
         if (input == null || input.isBlank()) return added;
@@ -84,6 +76,7 @@ public class LeetCodeAdminService {
                     continue;
                 }
 
+                // ★ CHANGED: ab hum codeSnippets aur metaData bhi fetch kar rahe hain
                 JsonNode d = fetchQuestionDetail(slug);
                 if (d == null || d.isMissingNode() || d.isNull()) {
                     log.warn("Empty detail for #{} ({})", num, slug);
@@ -103,7 +96,6 @@ public class LeetCodeAdminService {
                 added.add(num);
                 log.info("✓ Saved #{} {} to Mongo + JSON", num, problem.getTitle());
 
-                // Only sleep *between* problems, not after the last one
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
                 }
@@ -122,20 +114,11 @@ public class LeetCodeAdminService {
         return added;
     }
 
-    /**
-     * Full refresh — slow (thousands of problems × ~300ms each).
-     * Call via @Async path or background thread.
-     */
     @Async("taskExecutor")
     public void fetchAllAsync() {
-        try {
-            fetchAll();
-        } catch (Exception e) {
-            log.error("fetchAll background failure", e);
-        }
+        try { fetchAll(); } catch (Exception e) { log.error("fetchAll background failure", e); }
     }
 
-    /** Synchronous full fetch. Prefer fetchAllAsync() from the controller. */
     public int fetchAll() throws Exception {
         if (!fetchingAll.compareAndSet(false, true)) {
             log.warn("fetchAll already running — skipping duplicate request");
@@ -151,25 +134,18 @@ public class LeetCodeAdminService {
             ArrayNode p2Json    = MAPPER.createArrayNode();
             ObjectNode metaJson = MAPPER.createObjectNode();
 
-            int count = 0;
-            int idx = 0;
+            int count = 0, idx = 0;
             for (JsonNode q : list.path("data").path("problemsetQuestionList").path("questions")) {
                 idx++;
                 String slug = q.path("titleSlug").asText();
                 String numStr = q.path("frontendQuestionId").asText("");
                 int num;
                 try { num = Integer.parseInt(numStr); }
-                catch (NumberFormatException e) {
-                    log.warn("Skip non-numeric frontendQuestionId '{}'", numStr);
-                    continue;
-                }
+                catch (NumberFormatException e) { continue; }
 
                 try {
                     JsonNode d = fetchQuestionDetail(slug);
-                    if (d == null || d.isMissingNode() || d.isNull()) {
-                        log.warn("Empty detail for {} {}", num, slug);
-                        continue;
-                    }
+                    if (d == null || d.isMissingNode() || d.isNull()) continue;
 
                     Problem problem  = toProblem(num, d);
                     ProblemMeta meta = toMeta(num, d);
@@ -186,7 +162,6 @@ public class LeetCodeAdminService {
                     Thread.sleep(250);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    log.warn("fetchAll interrupted at #{}", num);
                     break;
                 } catch (Exception e) {
                     log.error("✗ {} {}: {}", num, slug, e.getMessage());
@@ -196,23 +171,19 @@ public class LeetCodeAdminService {
             write(P1, p1Json);
             write(P2, p2Json);
             write(PM, metaJson);
-            log.info("fetchAll done — {} / {} problems written", count, idx);
             return count;
         } finally {
             fetchingAll.set(false);
         }
     }
 
-    // ============================================================
-    //  GraphQL helper
-    // ============================================================
-
+    // ★ CHANGED: query mein codeSnippets, sampleTestCase, metaData bhi add kiya
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
             query($s:String!){question(titleSlug:$s){
               questionFrontendId title titleSlug content difficulty
               topicTags{name} hints
-              codeSnippets{lang code}
+              codeSnippets{lang langSlug code}
               sampleTestCase metaData
             }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
         return root.path("data").path("question");
@@ -235,16 +206,16 @@ public class LeetCodeAdminService {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(GRAPHQL))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "Mozilla/5.0 (codelab-leetcode-admin)")
+                .header("User-Agent", "Mozilla/5.0")
                 .header("Referer", "https://leetcode.com/")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
 
         if (!sessionCookie.isBlank())
-            b.header("Cookie", "LEETCODE_SESSION=" + sessionCookie + "; csrftoken=" + csrfFromCookie());
+            b.header("Cookie", "LEETCODE_SESSION=" + sessionCookie);
 
         HttpResponse<String> r = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
         if (r.statusCode() >= 400)
-            throw new RuntimeException("GraphQL HTTP " + r.statusCode() + ": " + truncate(r.body(), 200));
+            throw new RuntimeException("GraphQL HTTP " + r.statusCode());
 
         JsonNode root = MAPPER.readTree(r.body());
         if (root.has("errors"))
@@ -252,32 +223,78 @@ public class LeetCodeAdminService {
         return root;
     }
 
-    private String csrfFromCookie() {
-        // LeetCode also needs a csrftoken cookie for authed queries; if user only pasted LEETCODE_SESSION we can't fabricate it.
-        // This returns a blank string if absent — public queries still work.
-        return "";
-    }
-
-    // ============================================================
-    //  BUILDERS  (JsonNode → domain)
-    // ============================================================
-
+    // ★★★ THE MAIN FIX: metaData aur codeSnippets parse kar raha hai ★★★
     private Problem toProblem(int num, JsonNode d) {
         List<String> tags = new ArrayList<>();
         if (d.path("topicTags").isArray())
             d.path("topicTags").forEach(t -> tags.add(t.path("name").asText()));
 
+        String fn = "";
+        List<Problem.Param> params = new ArrayList<>();
+        String ret = "";
+
+        // Parse metaData (JSON string inside the JSON, silly LeetCode!)
+        try {
+            String metaDataStr = d.path("metaData").asText("");
+            if (!metaDataStr.isEmpty()) {
+                JsonNode meta = MAPPER.readTree(metaDataStr);
+                fn = meta.path("name").asText("");
+
+                JsonNode paramsArr = meta.path("params");
+                if (paramsArr.isArray()) {
+                    for (JsonNode p : paramsArr) {
+                        String pName = p.path("name").asText("");
+                        String pType = p.path("type").asText("");
+                        params.add(new Problem.Param(pName, pType));
+                    }
+                }
+                ret = meta.path("return").path("type").asText("");
+
+                // Agar params empty hai but codeSnippets mein kuch hai, toh wahan se nikaalne ki koshish karein
+                if (params.isEmpty() && d.path("codeSnippets").isArray()) {
+                    for (JsonNode snip : d.path("codeSnippets")) {
+                        if ("javascript".equals(snip.path("langSlug").asText())) {
+                            String code = snip.path("code").asText("");
+                            // Rough parse: "var isSameTree = function(p, q) {"
+                            int fnIdx = code.indexOf("= function(");
+                            if (fnIdx > 0) {
+                                int start = fnIdx + "= function(".length();
+                                int end = code.indexOf(")", start);
+                                if (end > start) {
+                                    String argsStr = code.substring(start, end).trim();
+                                    if (!argsStr.isEmpty()) {
+                                        for (String arg : argsStr.split(",")) {
+                                            String argName = arg.trim();
+                                            if (!argName.isEmpty()) {
+                                                params.add(new Problem.Param(argName, "any"));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse metaData for #{}: {}", num, e.getMessage());
+        }
+
+        // Defaults
+        if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
+        if (ret.isEmpty()) ret = "any";
+
         return Problem.builder()
                 .id(num)
-                .slug(text(d, "titleSlug"))
-                .title(text(d, "title"))
-                .difficulty(text(d, "difficulty"))
+                .slug(d.path("titleSlug").asText())
+                .title(d.path("title").asText())
+                .difficulty(d.path("difficulty").asText())
                 .tags(tags)
                 .acceptance(0.0)
-                .fn("")
-                .params(new ArrayList<>())
-                .ret("")
-                .description(text(d, "content"))
+                .fn(fn)
+                .params(params)
+                .ret(ret)
+                .description(d.path("content").asText())
                 .constraints(new ArrayList<>())
                 .sampleTests(new ArrayList<>())
                 .hiddenTests(new ArrayList<>())
@@ -303,15 +320,10 @@ public class LeetCodeAdminService {
                 .build();
     }
 
-    /** Safe text getter — never returns "null" string. */
     private static String text(JsonNode n, String field) {
         JsonNode v = n.path(field);
         return v.isMissingNode() || v.isNull() ? "" : v.asText("");
     }
-
-    // ============================================================
-    //  DOMAIN → JsonNode (keeps your exact file schema)
-    // ============================================================
 
     private ObjectNode problemToJson(Problem p) {
         ObjectNode o = MAPPER.createObjectNode();
@@ -336,7 +348,6 @@ public class LeetCodeAdminService {
         return o;
     }
 
-    /** problems2.json = Problem + companies/hints/edgeCases/explanation */
     private ObjectNode problemMetaToJson2(Problem p, ProblemMeta m) {
         ObjectNode o = problemToJson(p);
         o.set("companies", MAPPER.valueToTree(m.getCompanies()));
@@ -354,10 +365,6 @@ public class LeetCodeAdminService {
         o.put("explanation", m.getExplanation());
         return o;
     }
-
-    // ============================================================
-    //  JSON file helpers
-    // ============================================================
 
     private ArrayNode readArray(Path p) throws IOException {
         if (!Files.exists(p) || Files.size(p) == 0) return MAPPER.createArrayNode();
@@ -386,10 +393,6 @@ public class LeetCodeAdminService {
         arr.add(obj);
     }
 
-    // ============================================================
-    //  ONE-TIME MIGRATION — seed Mongo from existing JSON files
-    // ============================================================
-
     public int migrateJsonToMongo() throws IOException {
         ArrayNode p1Json = readArray(P1);
         ArrayNode p2Json = readArray(P2);
@@ -399,10 +402,7 @@ public class LeetCodeAdminService {
         for (JsonNode j : p1Json) {
             try {
                 Problem p = MAPPER.treeToValue(j, Problem.class);
-                if (p.getId() == null) {
-                    log.warn("skip problem with missing id: {}", truncate(j.toString(), 120));
-                    continue;
-                }
+                if (p.getId() == null) continue;
                 problemRepo.save(p);
                 problemsSaved++;
             } catch (Exception e) {
@@ -410,22 +410,16 @@ public class LeetCodeAdminService {
             }
         }
 
-        // Meta may live inside problems2.json (id-keyed array) OR problems_meta.json (id-keyed object)
         int metaSaved = 0;
-
-        // 1) problems2.json entries (each has id + companies/hints/etc.)
         for (JsonNode j : p2Json) {
             try {
                 int id = j.path("id").asInt(-1);
                 if (id < 0) continue;
                 metaRepo.save(buildMetaFromJson(id, j));
                 metaSaved++;
-            } catch (Exception e) {
-                log.warn("meta2 migrate skip: {}", e.getMessage());
-            }
+            } catch (Exception e) { log.warn("meta2 migrate skip: {}", e.getMessage()); }
         }
 
-        // 2) problems_meta.json — object keyed by numeric string
         var fields = pm.fields();
         while (fields.hasNext()) {
             var entry = fields.next();
@@ -433,44 +427,26 @@ public class LeetCodeAdminService {
                 int id = Integer.parseInt(entry.getKey());
                 metaRepo.save(buildMetaFromJson(id, entry.getValue()));
                 metaSaved++;
-            } catch (Exception e) {
-                log.warn("metaObj migrate skip key={}: {}", entry.getKey(), e.getMessage());
-            }
+            } catch (Exception e) { log.warn("metaObj migrate skip key={}: {}", entry.getKey(), e.getMessage()); }
         }
 
-        log.info("Migrated {} problems + {} meta docs to Mongo", problemsSaved, metaSaved);
         return problemsSaved;
     }
 
     private ProblemMeta buildMetaFromJson(int id, JsonNode j) {
         List<String> hints = new ArrayList<>();
         if (j.path("hints").isArray()) j.path("hints").forEach(h -> hints.add(h.asText()));
-
         List<String> companies = new ArrayList<>();
         if (j.path("companies").isArray()) j.path("companies").forEach(c -> companies.add(c.asText()));
-
         List<String> edges = new ArrayList<>();
         if (j.path("edgeCases").isArray()) j.path("edgeCases").forEach(e -> edges.add(e.asText()));
 
         return ProblemMeta.builder()
-                .id(id)
-                .hints(hints)
-                .companies(companies)
-                .edgeCases(edges)
-                .explanation(j.path("explanation").asText(""))
-                .build();
+                .id(id).hints(hints).companies(companies).edgeCases(edges)
+                .explanation(j.path("explanation").asText("")).build();
     }
-
-    // ============================================================
-    //  Misc
-    // ============================================================
 
     private static String escapeJson(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static String truncate(String s, int max) {
-        if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 }
