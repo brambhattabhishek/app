@@ -41,7 +41,7 @@ public class LeetCodeAdminService {
     private final ProblemRepository     problemRepo;
     private final ProblemMetaRepository metaRepo;
     private final ResourceLoader        resourceLoader;
-    private final CompanyImportService  companyImportService;   // ★ NEW
+    private final CompanyImportService  companyImportService;
 
     private volatile String sessionCookie = "";
     private final AtomicBoolean fetchingAll = new AtomicBoolean(false);
@@ -52,6 +52,9 @@ public class LeetCodeAdminService {
 
     public boolean isFetchingAll() { return fetchingAll.get(); }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Path resolution — try classpath, else data/ (ephemeral but OK)
+    // ═══════════════════════════════════════════════════════════════
     private Path resolvePath(String filename) throws IOException {
         try {
             Resource res = resourceLoader.getResource("classpath:" + filename);
@@ -61,6 +64,7 @@ public class LeetCodeAdminService {
             }
         } catch (Exception ignored) {}
 
+        // Fallback: data/ directory (ephemeral, but MongoDB is primary source)
         Path fallback = Paths.get("data", filename);
         Files.createDirectories(fallback.getParent());
         if (!Files.exists(fallback)) {
@@ -69,6 +73,9 @@ public class LeetCodeAdminService {
         return fallback;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Add problems (single or bulk) — with company auto-detect
+    // ═══════════════════════════════════════════════════════════════
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
         if (input == null || input.isBlank()) return added;
@@ -110,7 +117,7 @@ public class LeetCodeAdminService {
                 problem.setAcceptance(info.acceptance);
                 ProblemMeta meta = toMeta(num, d);
 
-                // ★ AUTO-DETECT COMPANIES
+                // ═══════ Auto-detect companies ═══════
                 try {
                     List<String> companies = companyImportService.findCompaniesForProblem(slug);
                     if (!companies.isEmpty()) {
@@ -123,18 +130,25 @@ public class LeetCodeAdminService {
                     log.warn("Company auto-detect failed for #{}: {}", num, e.getMessage());
                 }
 
+                // ═══════ Save to MongoDB (PRIMARY) ═══════
                 problemRepo.save(problem);
                 metaRepo.save(meta);
 
-                replaceOrAdd(p1Json, num, problemToJson(problem));
-                replaceOrAdd(p2Json, num, problemMetaToJson2(problem, meta));
-                metaJson.set(String.valueOf(num), metaToJson(meta));
+                // ═══════ Mirror to JSON (SECONDARY — may fail on ephemeral FS) ═══════
+                try {
+                    replaceOrAdd(p1Json, num, problemToJson(problem));
+                    replaceOrAdd(p2Json, num, problemMetaToJson2(problem, meta));
+                    metaJson.set(String.valueOf(num), metaToJson(meta));
+                } catch (Exception e) {
+                    log.warn("JSON mirror failed for #{}: {}", num, e.getMessage());
+                }
 
                 added.add(num);
-                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}, acceptance={}%, companies={})",
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}, acceptance={}%, companies={}, constraints={}, hints={})",
                         num, problem.getTitle(), problem.getFn(),
                         problem.getParams().size(), problem.getSampleTests().size(),
-                        problem.getAcceptance(), meta.getCompanies());
+                        problem.getAcceptance(), meta.getCompanies().size(),
+                        problem.getConstraints().size(), meta.getHints().size());
 
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
@@ -147,12 +161,17 @@ public class LeetCodeAdminService {
             }
         }
 
-        write(p1Path, p1Json);
-        write(p2Path, p2Json);
-        write(pmPath, metaJson);
+        // Best-effort JSON write
+        try { write(p1Path, p1Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+        try { write(p2Path, p2Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+        try { write(pmPath, metaJson); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+
         return added;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Fetch all problems (async — background job)
+    // ═══════════════════════════════════════════════════════════════
     @Async("taskExecutor")
     public void fetchAllAsync() {
         try { fetchAll(); } catch (Exception e) { log.error("fetchAll background failure", e); }
@@ -166,9 +185,9 @@ public class LeetCodeAdminService {
             Path pmPath = resolvePath("problems_meta.json");
 
             JsonNode list = graphql("""
-        query { problemsetQuestionList: questionList(categorySlug:"",limit:3000,skip:0,filters:{}) {
-          total: totalNum questions: data { frontendQuestionId titleSlug difficulty topicTags { name } acceptanceRate }
-        }}""", "{}");
+                query { problemsetQuestionList: questionList(categorySlug:"",limit:3000,skip:0,filters:{}) {
+                  total: totalNum questions: data { frontendQuestionId titleSlug difficulty topicTags { name } acceptanceRate }
+                }}""", "{}");
 
             ArrayNode p1Json    = MAPPER.createArrayNode();
             ArrayNode p2Json    = MAPPER.createArrayNode();
@@ -191,7 +210,6 @@ public class LeetCodeAdminService {
                     problem.setAcceptance(acceptance);
                     ProblemMeta meta = toMeta(num, d);
 
-                    // ★ Auto-detect companies during bulk fetch too
                     try {
                         List<String> companies = companyImportService.findCompaniesForProblem(slug);
                         if (!companies.isEmpty()) {
@@ -209,9 +227,10 @@ public class LeetCodeAdminService {
                     metaJson.set(String.valueOf(num), metaToJson(meta));
 
                     count++;
-                    log.info("✓ [{}] {} {} (samples: {}, acc: {}%, companies: {})",
+                    log.info("✓ [{}] {} {} (samples: {}, acc: {}%, companies: {}, constraints: {}, hints: {})",
                             count, num, slug, problem.getSampleTests().size(),
-                            acceptance, meta.getCompanies().size());
+                            acceptance, meta.getCompanies().size(),
+                            problem.getConstraints().size(), meta.getHints().size());
                     Thread.sleep(250);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -221,24 +240,29 @@ public class LeetCodeAdminService {
                 }
             }
 
-            write(p1Path, p1Json);
-            write(p2Path, p2Json);
-            write(pmPath, metaJson);
+            try { write(p1Path, p1Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+            try { write(p2Path, p2Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+            try { write(pmPath, metaJson); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+
             return count;
         } finally {
             fetchingAll.set(false);
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  GraphQL helpers
+    // ═══════════════════════════════════════════════════════════════
+
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
-    query($s:String!){question(titleSlug:$s){
-      questionFrontendId title titleSlug content difficulty
-      topicTags{name} hints
-      codeSnippets{lang langSlug code}
-      sampleTestCase
-      exampleTestcases
-    }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
+            query($s:String!){question(titleSlug:$s){
+              questionFrontendId title titleSlug content difficulty
+              topicTags{name} hints
+              codeSnippets{lang langSlug code}
+              sampleTestCase
+              exampleTestcases
+            }}""", "{\"s\":\"" + escapeJson(slug) + "\"}");
         return root.path("data").path("question");
     }
 
@@ -262,10 +286,10 @@ public class LeetCodeAdminService {
 
         try {
             JsonNode r = graphql("""
-            query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
-                categorySlug:"", limit:20, skip:0, filters:$f){ 
-                questions:data{questionFrontendId titleSlug acRate} 
-            }}""",
+                query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
+                    categorySlug:"", limit:20, skip:0, filters:$f){ 
+                    questions:data{questionFrontendId titleSlug acRate} 
+                }}""",
                     "{\"f\":{\"searchKeywords\":\"" + num + "\"}}");
 
             JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
@@ -299,10 +323,10 @@ public class LeetCodeAdminService {
 
         while (true) {
             JsonNode r = graphql("""
-            query($skip:Int!, $limit:Int!){problemsetQuestionList:questionList(
-                categorySlug:"", limit:$limit, skip:$skip, filters:{}){ 
-                questions:data{questionFrontendId titleSlug acceptanceRate} 
-            }}""",
+                query($skip:Int!, $limit:Int!){problemsetQuestionList:questionList(
+                    categorySlug:"", limit:$limit, skip:$skip, filters:{}){ 
+                    questions:data{questionFrontendId titleSlug acceptanceRate} 
+                }}""",
                     "{\"skip\":" + skip + ",\"limit\":" + limit + "}");
 
             JsonNode qs = r.path("data").path("problemsetQuestionList").path("questions");
@@ -352,6 +376,10 @@ public class LeetCodeAdminService {
         return root;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  toProblem — parse signature, samples, constraints
+    // ═══════════════════════════════════════════════════════════════
+
     private Problem toProblem(int num, JsonNode d) {
         List<String> tags = new ArrayList<>();
         if (d.path("topicTags").isArray())
@@ -363,7 +391,7 @@ public class LeetCodeAdminService {
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
         List<String> constraints = new ArrayList<>();
 
-        // ═══════════ STEP 1: Parse function signature from codeSnippets ═══════════
+        // ───── Parse signature from codeSnippets ─────
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
             JsonNode jsSnippet = null;
@@ -405,9 +433,8 @@ public class LeetCodeAdminService {
 
         String description = d.path("content").asText("");
 
-        // ═══════════ STEP 2: Parse CONSTRAINTS from description HTML ═══════════
+        // ───── Parse constraints from description HTML ─────
         if (!description.isEmpty()) {
-            // Pattern: <strong>Constraints:</strong> ... <ul>...</ul>
             Pattern constraintsPattern = Pattern.compile(
                     "Constraints:\\s*</strong>(.*?)(?:<strong>|$)",
                     Pattern.DOTALL | Pattern.CASE_INSENSITIVE
@@ -416,12 +443,11 @@ public class LeetCodeAdminService {
             if (cm.find()) {
                 String block = cm.group(1);
 
-                // Extract each <li> as one constraint
                 Pattern liPattern = Pattern.compile("<li>(.*?)</li>", Pattern.DOTALL);
                 Matcher lm = liPattern.matcher(block);
                 while (lm.find()) {
                     String c = lm.group(1)
-                            .replaceAll("<[^>]*>", "")   // strip HTML tags
+                            .replaceAll("<[^>]*>", "")
                             .replace("&lt;", "<")
                             .replace("&gt;", ">")
                             .replace("&amp;", "&")
@@ -441,7 +467,7 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 3: Parse expected outputs from description ═══════════
+        // ───── Parse expected outputs ─────
         List<String> expectedOutputs = new ArrayList<>();
         if (!description.isEmpty()) {
             String text = description
@@ -466,7 +492,7 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 4: Parse sample tests from exampleTestcases ═══════════
+        // ───── Parse sample tests ─────
         String exampleTestcases = d.path("exampleTestcases").asText("");
         if (!exampleTestcases.isEmpty()) {
             String[] lines = exampleTestcases.split("\n");
@@ -492,11 +518,10 @@ public class LeetCodeAdminService {
 
                     outIdx++;
                 }
-                log.debug("Parsed {} sample tests for #{}", sampleTests.size(), num);
             }
         }
 
-        // ═══════════ STEP 5: Fallback — sampleTestCase ═══════════
+        // ───── Fallback: sampleTestCase ─────
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -516,7 +541,6 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 6: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -531,7 +555,7 @@ public class LeetCodeAdminService {
                 .params(params)
                 .ret(ret)
                 .description(description)
-                .constraints(constraints)              // ★ NOW PARSED
+                .constraints(constraints)
                 .sampleTests(sampleTests)
                 .hiddenTests(new ArrayList<>())
                 .editorial(Problem.Editorial.builder()
@@ -546,26 +570,16 @@ public class LeetCodeAdminService {
         String lower = argName.toLowerCase();
         if (lower.equals("n") || lower.equals("k") || lower.equals("target") ||
                 lower.equals("val") || lower.equals("x") || lower.equals("y") ||
-                lower.equals("num") || lower.equals("index") || lower.equals("i")) {
-            return "int";
-        }
+                lower.equals("num") || lower.equals("index") || lower.equals("i")) return "int";
         if (lower.equals("s") || lower.equals("t") || lower.equals("word") ||
                 lower.equals("word1") || lower.equals("word2") || lower.equals("str") ||
-                lower.equals("text") || lower.equals("pattern")) {
-            return "string";
-        }
+                lower.equals("text") || lower.equals("pattern")) return "string";
         if (lower.contains("nums") || lower.contains("arr") || lower.contains("array") ||
                 lower.contains("prices") || lower.contains("heights") || lower.equals("a") ||
-                lower.equals("b") || lower.equals("digits")) {
-            return "int[]";
-        }
+                lower.equals("b") || lower.equals("digits")) return "int[]";
         if (lower.equals("p") || lower.equals("q") || lower.equals("root") ||
-                lower.equals("node") || lower.equals("head") || lower.equals("tree")) {
-            return "TreeNode";
-        }
-        if (lower.equals("matrix") || lower.equals("grid") || lower.equals("board")) {
-            return "int[][]";
-        }
+                lower.equals("node") || lower.equals("head") || lower.equals("tree")) return "TreeNode";
+        if (lower.equals("matrix") || lower.equals("grid") || lower.equals("board")) return "int[][]";
         return "any";
     }
 
@@ -595,6 +609,10 @@ public class LeetCodeAdminService {
                 .explanation("")
                 .build();
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  JSON serialization helpers
+    // ═══════════════════════════════════════════════════════════════
 
     private ObjectNode problemToJson(Problem p) {
         ObjectNode o = MAPPER.createObjectNode();
@@ -664,6 +682,9 @@ public class LeetCodeAdminService {
         arr.add(obj);
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Migration from JSON to MongoDB (one-time)
+    // ═══════════════════════════════════════════════════════════════
     public int migrateJsonToMongo() throws IOException {
         ArrayNode p1Json = readArray(resolvePath("problems.json"));
         ArrayNode p2Json = readArray(resolvePath("problems2.json"));

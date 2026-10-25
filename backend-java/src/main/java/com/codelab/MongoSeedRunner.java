@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class MongoSeedRunner implements ApplicationRunner {
-
     private final ProblemRepository problemRepo;
     private final LeetCodeAdminService leetCodeService;
 
@@ -23,12 +22,12 @@ public class MongoSeedRunner implements ApplicationRunner {
             log.info("MongoDB is EMPTY. Seeding from JSON files...");
             try {
                 int migrated = leetCodeService.migrateJsonToMongo();
-                log.info("✅ Seeded {} problems into MongoDB", migrated);
+                log.info("✅ Seeded {} problems into MongoDB from JSON", migrated);
             } catch (Exception e) {
-                log.error("❌ Seed failed: {}", e.getMessage(), e);
+                log.error("❌ Failed to seed MongoDB from JSON: {}", e.getMessage(), e);
             }
         } else {
-            log.info("MongoDB has {} problems, skipping seed", count);
+            log.info("MongoDB already has {} problems, skipping seed", count);
         }
     }
 }
