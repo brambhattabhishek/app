@@ -58,14 +58,25 @@ public class ApiController {
     public List<Map<String, Object>> list(@RequestHeader(value = "Authorization", required = false) String h) {
         Document u = auth.optional(h);
         Set<String> solved = new HashSet<>(), attempted = new HashSet<>();
-        if (u != null) for (Document s : mongo.getCollection("submissions").find(eq("user_id", u.getString("user_id")))) {
-            attempted.add(s.getString("slug"));
-            if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
+        if (u != null) {
+            for (Document s : mongo.getCollection("submissions").find(eq("user_id", u.getString("user_id")))) {
+                attempted.add(s.getString("slug"));
+                if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
+            }
         }
         List<Map<String, Object>> out = new ArrayList<>();
         for (Document d : mongo.getCollection("problems").find().sort(new Document("id", 1))) {
             Map<String, Object> m = new LinkedHashMap<>();
-            for (String k : List.of("id", "slug", "title", "difficulty", "tags", "acceptance", "companies")) m.put(k, d.get(k));
+
+            // ★ FIX: id — try "id" first, fallback to "_id"
+            Object idObj = d.get("id");
+            if (idObj == null) idObj = d.get("_id");
+            m.put("id", idObj);
+
+            for (String k : List.of("slug", "title", "difficulty", "tags", "acceptance", "companies")) {
+                m.put(k, d.get(k));
+            }
+
             String sl = d.getString("slug");
             m.put("status", solved.contains(sl) ? "solved" : attempted.contains(sl) ? "attempted" : "todo");
             out.add(m);
