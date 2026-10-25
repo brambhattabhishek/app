@@ -65,10 +65,12 @@ public class ApiController {
             }
         }
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Document d : mongo.getCollection("problems").find().sort(new Document("id", 1))) {
+
+        // ★ FIX: Sort by "_id" (never null, always present)
+        for (Document d : mongo.getCollection("problems").find().sort(new Document("_id", 1))) {
             Map<String, Object> m = new LinkedHashMap<>();
 
-            // ★ FIX: id — try "id" first, fallback to "_id"
+            // ★ FIX: id fallback to _id
             Object idObj = d.get("id");
             if (idObj == null) idObj = d.get("_id");
             m.put("id", idObj);
