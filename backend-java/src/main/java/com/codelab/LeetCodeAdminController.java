@@ -37,6 +37,23 @@ public class LeetCodeAdminController {
         }
     }
 
+    @PostMapping("/delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> deleteProblems(@RequestBody Map<String, String> body) {
+        try {
+            String input = body == null ? null : body.get("numbers");
+            if (input == null || input.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "error", "Missing 'numbers' field"));
+            }
+            Map<String, Object> result = service.deleteProblems(input);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("success", false, "error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/import-companies")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> importCompanies(@RequestBody Map<String, List<String>> body) {

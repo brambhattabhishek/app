@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     Users, Activity, LogIn, Eye, Send, Plus, Loader2,
-    Database, RefreshCw, Building2
+    Database, RefreshCw, Building2, Trash2
 } from "lucide-react";
 import { api, errMsg, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -17,7 +17,7 @@ const Stat = ({ icon: Icon, label, value, id }) => (
 );
 
 // ═══════════════════════════════════════════════════════════════
-//  1. Add Problems Panel (with auto-company detection on backend)
+//  1. Add Problems Panel
 // ═══════════════════════════════════════════════════════════════
 const AddProblemsPanel = ({ onAdded }) => {
     const queryClient = useQueryClient();
@@ -34,12 +34,9 @@ const AddProblemsPanel = ({ onAdded }) => {
             const { data } = await api.post("/admin/leetcode/add", { numbers: trimmed });
             setResult({ ok: true, added: data?.added ?? [] });
             setNumbers("");
-
-            // ★ Invalidate all caches — companies auto-detect backend mein hota hai
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
-
             onAdded?.();
         } catch (e) {
             setResult({ ok: false, error: errMsg(e) });
@@ -51,7 +48,7 @@ const AddProblemsPanel = ({ onAdded }) => {
     return (
         <section className="rounded-xl border border-primary/20 bg-card p-4 shadow-sm" data-testid="admin-add-problems">
             <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">
-                Add LeetCode Problems (Auto-detects companies)
+                Add Problems (Auto-detects companies)
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -68,18 +65,17 @@ const AddProblemsPanel = ({ onAdded }) => {
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 >
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    {busy ? "Adding…" : "Add Problems"}
+                    {busy ? "Adding…" : "Add"}
                 </button>
             </div>
             {busy && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                    Fetching from LeetCode + detecting companies… (8-15 sec)
+                    8-15 sec per problem (auto-detect companies)
                 </p>
             )}
             {result?.ok && (
                 <p className="mt-2 text-xs text-green-500">
                     Added {result.added.length} problem(s): {result.added.join(", ")}
-                    {" "}(companies auto-detected)
                 </p>
             )}
             {result && !result.ok && <p className="mt-2 text-xs text-red-500">{result.error}</p>}
@@ -88,7 +84,114 @@ const AddProblemsPanel = ({ onAdded }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  2. Company Import Panel (bulk import — fills companies for all problems)
+//  2. ★ DELETE Problems Panel (NEW)
+// ═══════════════════════════════════════════════════════════════
+const DeleteProblemsPanel = ({ onDeleted }) => {
+    const queryClient = useQueryClient();
+    const [items, setItems] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+    const [confirm, setConfirm] = useState(false);
+
+    const submit = async () => {
+        const trimmed = items.trim();
+        if (!trimmed) return;
+
+        if (!confirm) {
+            setConfirm(true);
+            return;
+        }
+
+        setBusy(true);
+        setResult(null);
+        setConfirm(false);
+        try {
+            const { data } = await api.post("/admin/leetcode/delete", { numbers: trimmed });
+            setResult({
+                ok: true,
+                deleted: data?.deleted ?? [],
+                deletedSlugs: data?.deletedSlugs ?? [],
+                notFound: data?.notFound ?? [],
+                errors: data?.errors ?? [],
+            });
+            setItems("");
+
+            // Invalidate all caches
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+            queryClient.invalidateQueries({ queryKey: ["daily"] });
+
+            onDeleted?.();
+        } catch (e) {
+            setResult({ ok: false, error: errMsg(e) });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <section className="rounded-xl border border-red-500/30 bg-card p-4 shadow-sm" data-testid="admin-delete-problems">
+            <p className="text-xs font-semibold uppercase tracking-wider text-red-500 mb-3">
+                ⚠️ Delete Problems (number or slug)
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                    value={items}
+                    onChange={(e) => { setItems(e.target.value); setConfirm(false); }}
+                    onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
+                    placeholder="e.g. 1 3 two-sum valid-parentheses"
+                    className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500/40"
+                    disabled={busy}
+                />
+                <button
+                    onClick={submit}
+                    disabled={busy || !items.trim()}
+                    className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                        confirm ? "bg-red-600 hover:bg-red-700 animate-pulse" : "bg-red-500 hover:bg-red-600"
+                    }`}
+                >
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {busy ? "Deleting…" : confirm ? "Click to confirm" : "Delete"}
+                </button>
+            </div>
+            {confirm && (
+                <p className="mt-2 text-xs text-red-400 font-semibold">
+                    ⚠️ Are you sure? Click "Click to confirm" again to permanently delete.
+                </p>
+            )}
+            {busy && (
+                <p className="mt-2 text-xs text-muted-foreground">Deleting from MongoDB + JSON…</p>
+            )}
+            {result?.ok && (
+                <>
+                    {result.deleted.length > 0 && (
+                        <p className="mt-2 text-xs text-green-500">
+                            ✅ Deleted {result.deleted.length} problem(s): {result.deleted.join(", ")}
+                        </p>
+                    )}
+                    {result.notFound.length > 0 && (
+                        <p className="mt-2 text-xs text-yellow-500">
+                            ⚠️ Not found: {result.notFound.join(", ")}
+                        </p>
+                    )}
+                    {result.errors.length > 0 && (
+                        <p className="mt-2 text-xs text-red-500">
+                            ❌ Errors: {result.errors.join("; ")}
+                        </p>
+                    )}
+                    {result.deleted.length === 0 && result.notFound.length === 0 && (
+                        <p className="mt-2 text-xs text-muted-foreground">Nothing deleted.</p>
+                    )}
+                </>
+            )}
+            {result && !result.ok && <p className="mt-2 text-xs text-red-500">{result.error}</p>}
+        </section>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  3. Company Import Panel
 // ═══════════════════════════════════════════════════════════════
 const CompanyImportPanel = () => {
     const queryClient = useQueryClient();
@@ -104,8 +207,6 @@ const CompanyImportPanel = () => {
         try {
             const { data } = await api.post("/admin/leetcode/import-companies", { companies: list });
             setResult({ ok: true, summary: data.result?._summary });
-
-            // ★ Invalidate ALL affected caches
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
@@ -119,7 +220,7 @@ const CompanyImportPanel = () => {
     return (
         <section className="rounded-xl border bg-card p-4" data-testid="admin-company-import">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Bulk Import Companies from GitHub
+                Import Companies (from GitHub)
             </p>
             <textarea
                 value={companies}
@@ -136,11 +237,7 @@ const CompanyImportPanel = () => {
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
                 {busy ? "Importing…" : "Import Companies"}
             </button>
-            {busy && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                    Fetching CSVs from GitHub… (~5 sec per company)
-                </p>
-            )}
+            {busy && <p className="mt-2 text-xs text-muted-foreground">~5 sec per company</p>}
             {result?.ok && result.summary && (
                 <p className="mt-2 text-xs text-green-500">
                     Imported {result.summary.totalCompanies} companies, updated {result.summary.totalProblemsUpdated} problems
@@ -152,7 +249,7 @@ const CompanyImportPanel = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  3. System Tools Panel
+//  4. System Tools Panel
 // ═══════════════════════════════════════════════════════════════
 const SystemToolsPanel = ({ onMigrated }) => {
     const queryClient = useQueryClient();
@@ -165,12 +262,9 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             const { data } = await api.post("/admin/leetcode/migrate-json");
             setMsg({ ok: true, text: `Migrated ${data.migrated} problems to DB.` });
-
-            // ★ Invalidate all caches
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
-
             onMigrated?.();
         } catch (e) {
             setMsg({ ok: false, text: errMsg(e) });
@@ -183,7 +277,6 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             await api.post("/admin/leetcode/fetch-all", {});
             setMsg({ ok: true, text: "Background sync started. Check logs." });
-
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
@@ -212,7 +305,7 @@ const SystemToolsPanel = ({ onMigrated }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  4. User Role Action
+//  5. User Role Action
 // ═══════════════════════════════════════════════════════════════
 const UserRoleAction = ({ user, onAction }) => {
     const [busy, setBusy] = useState(false);
@@ -279,7 +372,6 @@ export default function AdminPage() {
 
     return (
         <main className="relative z-10 max-w-7xl mx-auto px-6 py-10 space-y-6" data-testid="admin-page">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
                 <div>
                     <h1 className="font-heading text-3xl font-bold tracking-tight">Admin Control Center</h1>
@@ -287,9 +379,10 @@ export default function AdminPage() {
                 </div>
             </div>
 
-            {/* ★ Action Panels — 3 columns */}
-            <div className="grid lg:grid-cols-3 gap-4">
+            {/* ★ Action Panels — 4 columns: Add, Delete, CompanyImport, SystemTools */}
+            <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-4">
                 <AddProblemsPanel onAdded={loadOverview} />
+                <DeleteProblemsPanel onDeleted={loadOverview} />
                 <CompanyImportPanel />
                 <SystemToolsPanel onMigrated={loadOverview} />
             </div>

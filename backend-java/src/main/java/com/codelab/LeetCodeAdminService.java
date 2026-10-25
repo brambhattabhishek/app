@@ -566,6 +566,113 @@ public class LeetCodeAdminService {
                 .build();
     }
 
+    /**
+     * ★ Delete one or more problems by number OR slug.
+     * @param input space/comma separated numbers (1 2 3) OR slugs (two-sum, valid-parentheses)
+     * @return Map with deleted (list), notFound (list), errors (list)
+     */
+    public synchronized Map<String, Object> deleteProblems(String input) throws Exception {
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<Integer> deletedNumbers = new ArrayList<>();
+        List<String> deletedSlugs = new ArrayList<>();
+        List<String> notFound = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+
+        if (input == null || input.isBlank()) {
+            result.put("deleted", List.of());
+            result.put("notFound", List.of());
+            result.put("errors", List.of());
+            return result;
+        }
+
+        Path p1Path = resolvePath("problems.json");
+        Path p2Path = resolvePath("problems2.json");
+        Path pmPath = resolvePath("problems_meta.json");
+
+        ArrayNode p1Json    = readArray(p1Path);
+        ArrayNode p2Json    = readArray(p2Path);
+        ObjectNode metaJson = readObject(pmPath);
+
+        for (String token : input.replace(",", " ").split("\\s+")) {
+            if (token.isBlank()) continue;
+            token = token.trim();
+
+            try {
+                int targetId = -1;
+                String targetSlug = null;
+
+                // ★ Try numeric first
+                try {
+                    int num = Integer.parseInt(token);
+                    SlugInfo info = slugForNumber(num);
+                    if (info != null && info.slug != null) {
+                        targetId = num;
+                        targetSlug = info.slug;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Not numeric → treat as slug
+                    targetSlug = token.toLowerCase();
+                }
+
+                // ★ If slug provided directly, find its ID
+                if (targetId == -1 && targetSlug != null) {
+                    var existing = problemRepo.findBySlug(targetSlug);
+                    if (existing.isPresent()) {
+                        targetId = existing.get().getId();
+                    }
+                }
+
+                if (targetId == -1 || targetSlug == null) {
+                    notFound.add(token);
+                    log.warn("⚠️ Not found: {}", token);
+                    continue;
+                }
+
+                // ═══════ Delete from MongoDB (primary) ═══════
+                problemRepo.deleteById(targetId);
+                metaRepo.deleteById(targetId);
+
+                // ═══════ Delete from JSON (secondary, best-effort) ═══════
+                removeFromArray(p1Json, targetId);
+                removeFromArray(p2Json, targetId);
+                metaJson.remove(String.valueOf(targetId));
+
+                deletedNumbers.add(targetId);
+                deletedSlugs.add(targetSlug);
+                log.info("🗑️ Deleted #{} {} (from MongoDB + JSON)", targetId, targetSlug);
+
+            } catch (Exception e) {
+                log.error("✗ Failed to delete '{}': {}", token, e.getMessage());
+                errors.add(token + ": " + e.getMessage());
+            }
+        }
+
+        // Write JSON files (best-effort)
+        try { write(p1Path, p1Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+        try { write(p2Path, p2Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+        try { write(pmPath, metaJson); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
+
+        result.put("deleted", deletedNumbers);
+        result.put("deletedSlugs", deletedSlugs);
+        result.put("notFound", notFound);
+        result.put("errors", errors);
+        result.put("success", !deletedNumbers.isEmpty());
+
+        return result;
+    }
+
+    /**
+     * Helper — remove object with matching id from ArrayNode
+     */
+    private void removeFromArray(ArrayNode arr, int id) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (arr.get(i).path("id").asInt(-1) == id) {
+                arr.remove(i);
+                return;
+            }
+        }
+    }
+
     private String guessType(String argName) {
         String lower = argName.toLowerCase();
         if (lower.equals("n") || lower.equals("k") || lower.equals("target") ||
