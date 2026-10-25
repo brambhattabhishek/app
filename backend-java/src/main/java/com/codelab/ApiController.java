@@ -98,18 +98,27 @@ public class ApiController {
     }
 
     @GetMapping("/problems/{slug}")
-    public Map<String, Object> detail(@PathVariable String slug, @RequestHeader(value = "Authorization", required = false) String h) {
+    public Map<String, Object> detail(@PathVariable String slug,
+                                      @RequestHeader(value = "Authorization", required = false) String h) {
         Document d = problem(slug);
         Document u = auth.optional(h);
         if (u != null) progress(u, slug, new Document("last_opened", new Date()));
-        Map<String, Object> m = clean(d);
+
+        Map<String, Object> m = clean(d);          // removes _id
         m.remove("hiddenTests");
 
-        // ★ Add companies from ProblemMeta
+        // ★ FIX: id fallback — try "id" first, then "_id"
+        Object idObj = d.get("id");
+        if (idObj == null) idObj = d.get("_id");
+        m.put("id", idObj);
+
+        // ★ Companies from ProblemMeta
         var metaOpt = metaRepo.findBySlug(slug);
         m.put("companies", metaOpt.map(ProblemMeta::getCompanies).orElse(List.of()));
 
+        // ★ Boilerplates
         m.put("boilerplates", CodeTemplates.boilerplates(d));
+
         return m;
     }
 
