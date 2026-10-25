@@ -25,7 +25,12 @@ public class DailyController {
 
     static String today() { return LocalDate.now(ZoneOffset.UTC).toString(); }
 
-    List<Document> problems() { return mongo.getCollection("problems").find().sort(new Document("id", 1)).into(new ArrayList<>()); }
+    List<Document> problems() {
+        return mongo.getCollection("problems")
+                .find()
+                .sort(new Document("_id", 1))
+                .into(new ArrayList<>());
+    }
 
     /** Today's problem for this user: unsolved, from their most-solved categories / interests; stable for the whole day. */
     Document assignment(Document u) {
@@ -126,58 +131,6 @@ public class DailyController {
         return Map.of("sent", sendReminders());
     }
 
-    // ---------- Company practice lists ----------
-    Map<String, String> statusMap(Document u) {
-        Map<String, String> st = new HashMap<>();
-        if (u == null) return st;
-        for (Document s : mongo.getCollection("submissions").find(eq("user_id", u.getString("user_id")))) {
-            String sl = s.getString("slug");
-            if ("Accepted".equals(s.getString("status"))) st.put(sl, "solved");
-            else st.putIfAbsent(sl, "attempted");
-        }
-        return st;
-    }
-
-    @GetMapping("/companies")
-    public List<Map<String, Object>> companies(@RequestHeader(value = "Authorization", required = false) String h) {
-        Map<String, String> st = statusMap(auth.optional(h));
-        Map<String, int[]> agg = new TreeMap<>();
-        for (Document p : problems())
-            for (String c : Optional.ofNullable(p.getList("companies", String.class)).orElse(List.of())) {
-                int[] a = agg.computeIfAbsent(c, k -> new int[2]);
-                a[0]++;
-                if ("solved".equals(st.get(p.getString("slug")))) a[1]++;
-            }
-        List<Map<String, Object>> out = new ArrayList<>();
-        agg.forEach((c, a) -> out.add(new LinkedHashMap<>(Map.of("name", c, "count", a[0], "solved", a[1]))));
-        out.sort((x, y) -> (int) y.get("count") - (int) x.get("count"));
-        return out;
-    }
-
-    @GetMapping("/companies/{name}")
-    public Map<String, Object> company(@PathVariable String name, @RequestHeader(value = "Authorization", required = false) String h) {
-        Map<String, String> st = statusMap(auth.optional(h));
-        List<Map<String, Object>> list = new ArrayList<>();
-        Map<String, int[]> byDiff = new LinkedHashMap<>(Map.of("Easy", new int[2], "Medium", new int[2], "Hard", new int[2]));
-        for (Document p : problems()) {
-            if (!Optional.ofNullable(p.getList("companies", String.class)).orElse(List.of()).contains(name)) continue;
-            Map<String, Object> m = ApiController.summary(p);
-            String s = st.getOrDefault(p.getString("slug"), "todo");
-            m.put("status", s);
-            list.add(m);
-            int[] a = byDiff.get(p.getString("difficulty"));
-            a[0]++;
-            if (s.equals("solved")) a[1]++;
-        }
-        if (list.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found");
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("name", name);
-        out.put("problems", list);
-        out.put("total", list.size());
-        out.put("solved", list.stream().filter(m -> "solved".equals(m.get("status"))).count());
-        Map<String, Object> d = new LinkedHashMap<>();
-        byDiff.forEach((k, a) -> d.put(k, Map.of("total", a[0], "solved", a[1])));
-        out.put("byDifficulty", d);
-        return out;
-    }
+    // ★ REMOVED: statusMap(), companies(), company()
+    // These are now handled by ApiController (using ProblemMeta.companies)
 }
