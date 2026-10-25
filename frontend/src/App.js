@@ -28,26 +28,33 @@ import {
 } from "@/lib/api";
 import { initAnalytics, track } from "@/lib/analytics";
 
-// ★ TANSTACK QUERY CLIENT — App ke bahar define karein taaki re-render par reset na ho
+// ═══════════════════════════════════════════════════════════════
+//  TanStack Query client
+// ═══════════════════════════════════════════════════════════════
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,      // 5 min tak data fresh (cache hit)
-      gcTime: 15 * 60 * 1000,         // 15 min tak cache memory mein (v5: cacheTime → gcTime)
-      refetchOnWindowFocus: false,    // Tab switch par re-fetch nahi
-      refetchOnMount: false,           // Component mount par re-fetch nahi (cache se data aaye)
-      retry: 1,                        // Fail hone par 1 retry
+      staleTime: 5 * 60 * 1000,
+      gcTime: 15 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      retry: 1,
     },
   },
 });
 
+// ═══════════════════════════════════════════════════════════════
+//  Page tracker — page view events
+// ═══════════════════════════════════════════════════════════════
 function PageTracker() {
   const { pathname } = useLocation();
 
+  // ★ Init analytics ONCE
   useEffect(() => {
     initAnalytics();
   }, []);
 
+  // ★ Track page view on route change
   useEffect(() => {
     track("page_view", { page_path: pathname });
   }, [pathname]);
@@ -55,17 +62,25 @@ function PageTracker() {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  Global loading overlay — hides when API is idle
+// ═══════════════════════════════════════════════════════════════
 function GlobalLoadingOverlay() {
-  const [visible, setVisible] = useState(true);
+  // ★ Start hidden by default — only show if there's an active request
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // Check current state — if requests already in flight, show immediately
+    if (getActiveApiRequests() > 0) {
+      setVisible(true);
+    }
+
     let finished = false;
     let idleTimer;
     let maxTimer;
 
     const hideWhenIdle = () => {
       clearTimeout(idleTimer);
-
       idleTimer = setTimeout(() => {
         if (!finished && getActiveApiRequests() === 0) {
           finished = true;
@@ -79,16 +94,21 @@ function GlobalLoadingOverlay() {
       if (finished) return;
 
       if (count > 0) {
+        // ★ Show overlay when requests start
+        setVisible(true);
         clearTimeout(idleTimer);
       } else {
         hideWhenIdle();
       }
     });
 
+    // If no requests on mount, don't show
     if (getActiveApiRequests() === 0) {
-      hideWhenIdle();
+      finished = true;
+      setVisible(false);
     }
 
+    // ★ Safety: force-hide after 15s
     maxTimer = setTimeout(() => {
       if (!finished) {
         finished = true;
@@ -106,9 +126,13 @@ function GlobalLoadingOverlay() {
   return visible ? <LoadingScreen /> : null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  App Router
+// ═══════════════════════════════════════════════════════════════
 function AppRouter() {
   const location = useLocation();
 
+  // ★ Google OAuth callback — dedicated page
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
@@ -133,6 +157,9 @@ function AppRouter() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  Root App
+// ═══════════════════════════════════════════════════════════════
 export default function App() {
   return (
       <ThemeProvider
@@ -140,14 +167,13 @@ export default function App() {
           defaultTheme="dark"
           enableSystem={false}
       >
-        <QueryClientProvider client={queryClient}>   {/* ★ Wrap */}
+        <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <BrowserRouter>
               <AppRouter />
               <GlobalLoadingOverlay />
+              <Toaster position="top-center" richColors />
             </BrowserRouter>
-
-            <Toaster position="top-center" richColors />
           </AuthProvider>
         </QueryClientProvider>
       </ThemeProvider>
