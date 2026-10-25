@@ -6,144 +6,262 @@ import { useAuth } from "@/context/AuthContext";
 import { diffCls } from "@/pages/ProblemsPage";
 
 export const fmtInput = (params, input) =>
-  input.split("\n").map((v, i) => `${params[i]?.name} = ${v}`).join(", ");
+    input.split("\n").map((v, i) => `${params[i]?.name} = ${v}`).join(", ");
 
 function Hints({ hints }) {
-  const [open, setOpen] = useState({});
-  return (
-    <div className="mt-8 divide-y border-y" data-testid="hints-section">
-      {hints.map((h, i) => (
-        <div key={i}>
-          <button onClick={() => setOpen({ ...open, [i]: !open[i] })} data-testid={`hint-toggle-${i + 1}`}
-            className="w-full flex items-center justify-between py-3 text-sm font-medium hover:text-primary transition-colors">
-            <span className="flex items-center gap-2"><Lightbulb className="w-4 h-4 text-medium" />Hint {i + 1}</span>
-            <ChevronDown className={`w-4 h-4 transition-transform ${open[i] ? "rotate-180" : ""}`} />
-          </button>
-          {open[i] && <p className="pb-4 text-sm text-muted-foreground leading-6" data-testid={`hint-content-${i + 1}`}>{h}</p>}
+    const [open, setOpen] = useState({});
+    return (
+        <div className="mt-8 divide-y border-y" data-testid="hints-section">
+            {hints.map((h, i) => (
+                <div key={i}>
+                    <button
+                        onClick={() => setOpen({ ...open, [i]: !open[i] })}
+                        data-testid={`hint-toggle-${i + 1}`}
+                        className="w-full flex items-center justify-between py-3 text-sm font-medium hover:text-primary transition-colors"
+                    >
+            <span className="flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-medium" />
+              Hint {i + 1}
+            </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${open[i] ? "rotate-180" : ""}`} />
+                    </button>
+                    {open[i] && (
+                        <p
+                            className="pb-4 text-sm text-muted-foreground leading-6"
+                            data-testid={`hint-content-${i + 1}`}
+                            dangerouslySetInnerHTML={{ __html: h }}
+                        />
+                    )}
+                </div>
+            ))}
         </div>
-      ))}
-    </div>
-  );
+    );
 }
 
 function Understand({ p }) {
-  if (!p.explanation && !p.edgeCases?.length) return null;
-  return (
-    <div className="mt-8 rounded-xl border bg-secondary/40 p-4" data-testid="understand-section">
-      <p className="flex items-center gap-2 font-semibold text-sm mb-2"><BookOpen className="w-4 h-4 text-primary" />Understand the problem</p>
-      {p.explanation && <p className="text-sm leading-6 text-muted-foreground mb-3">{p.explanation}</p>}
-      {!!p.edgeCases?.length && (
-        <>
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2"><AlertTriangle className="w-3.5 h-3.5 text-hard" />Edge cases to handle</p>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground" data-testid="edge-cases-list">
-            {p.edgeCases.map((e) => <li key={e}>{e}</li>)}
-          </ul>
-        </>
-      )}
-    </div>
-  );
+    if (!p.explanation && !p.edgeCases?.length) return null;
+    return (
+        <div className="mt-8 rounded-xl border bg-secondary/40 p-4" data-testid="understand-section">
+            <p className="flex items-center gap-2 font-semibold text-sm mb-2">
+                <BookOpen className="w-4 h-4 text-primary" />
+                Understand the problem
+            </p>
+            {p.explanation && <p className="text-sm leading-6 text-muted-foreground mb-3">{p.explanation}</p>}
+            {!!p.edgeCases?.length && (
+                <>
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-hard" />
+                        Edge cases to handle
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground" data-testid="edge-cases-list">
+                        {p.edgeCases.map((e) => <li key={e}>{e}</li>)}
+                    </ul>
+                </>
+            )}
+        </div>
+    );
 }
 
 function Description({ p }) {
-  return (
-    <div className="rise">
-      <h1 className="font-heading text-2xl font-bold tracking-tight" data-testid="problem-title">{p.id}. {p.title}</h1>
-      <div className="flex flex-wrap items-center gap-2 mt-3 mb-6">
-        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary ${diffCls[p.difficulty]}`} data-testid="problem-difficulty">{p.difficulty}</span>
-        {p.tags.map((t) => <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-secondary text-muted-foreground">{t}</span>)}
-      </div>
-      {!!p.companies?.length && (
-        <div className="flex flex-wrap items-center gap-2 -mt-3 mb-6" data-testid="problem-companies">
-          <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-          {p.companies.map((c) => <Link key={c} to={`/companies/${encodeURIComponent(c)}`} data-testid={`company-chip-${c.toLowerCase().replace(/\s+/g, "-")}`} className="text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary hover:bg-primary/10 transition-colors">{c}</Link>)}
+    // ★ Safe fallbacks for every array/optional field
+    const tags        = p.tags        || [];
+    const companies   = p.companies   || [];
+    const sampleTests = p.sampleTests || [];
+    const constraints = p.constraints || [];
+    const hints       = p.hints       || [];
+    const params      = p.params      || [];
+
+    return (
+        <div className="rise">
+            <h1 className="font-heading text-2xl font-bold tracking-tight" data-testid="problem-title">
+                {p.id != null ? `${p.id}. ` : ""}{p.title}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-3 mb-6">
+        <span
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary ${diffCls[p.difficulty] || ""}`}
+            data-testid="problem-difficulty"
+        >
+          {p.difficulty}
+        </span>
+                {tags.map((t) => (
+                    <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-secondary text-muted-foreground">
+            {t}
+          </span>
+                ))}
+            </div>
+
+            {!!companies.length && (
+                <div className="flex flex-wrap items-center gap-2 -mt-3 mb-6" data-testid="problem-companies">
+                    <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                    {companies.map((c) => (
+                        <Link
+                            key={c}
+                            to={`/companies/${encodeURIComponent(c)}`}
+                            data-testid={`company-chip-${c.toLowerCase().replace(/\s+/g, "-")}`}
+                            className="text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                        >
+                            {c}
+                        </Link>
+                    ))}
+                </div>
+            )}
+
+            <div className="prose-lc text-[15px]" dangerouslySetInnerHTML={{ __html: p.description || "" }} />
+
+            {sampleTests.map((t, i) => (
+                <div key={i} className="mt-5" data-testid={`example-${i + 1}`}>
+                    <p className="font-semibold text-sm mb-2">Example {i + 1}:</p>
+                    <div className="border-l-2 border-border pl-4 font-mono text-[13px] leading-7">
+                        <div>
+                            <span className="font-semibold">Input:</span>{" "}
+                            <span className="text-muted-foreground">{fmtInput(params, t.input)}</span>
+                        </div>
+                        <div>
+                            <span className="font-semibold">Output:</span>{" "}
+                            <span className="text-muted-foreground">{t.expected}</span>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            {constraints.length > 0 && (
+                <>
+                    <p className="font-semibold text-sm mt-7 mb-2">Constraints:</p>
+                    <ul className="list-disc pl-5 space-y-1.5">
+                        {constraints.map((c, i) => (
+                            <li key={i}>
+                                <code className="font-mono text-[12.5px] px-1.5 py-0.5 rounded bg-secondary border">
+                                    {c}
+                                </code>
+                            </li>
+                        ))}
+                    </ul>
+                </>
+            )}
+
+            <Understand p={p} />
+            {!!hints.length && <Hints hints={hints} />}
         </div>
-      )}
-      <div className="prose-lc text-[15px]" dangerouslySetInnerHTML={{ __html: p.description }} />
-      {p.sampleTests.map((t, i) => (
-        <div key={i} className="mt-5" data-testid={`example-${i + 1}`}>
-          <p className="font-semibold text-sm mb-2">Example {i + 1}:</p>
-          <div className="border-l-2 border-border pl-4 font-mono text-[13px] leading-7">
-            <div><span className="font-semibold">Input:</span> <span className="text-muted-foreground">{fmtInput(p.params, t.input)}</span></div>
-            <div><span className="font-semibold">Output:</span> <span className="text-muted-foreground">{t.expected}</span></div>
-          </div>
-        </div>
-      ))}
-      <p className="font-semibold text-sm mt-7 mb-2">Constraints:</p>
-      <ul className="list-disc pl-5 space-y-1.5">
-        {p.constraints.map((c) => <li key={c}><code className="font-mono text-[12.5px] px-1.5 py-0.5 rounded bg-secondary border">{c}</code></li>)}
-      </ul>
-      <Understand p={p} />
-      {!!p.hints?.length && <Hints hints={p.hints} />}
-    </div>
-  );
+    );
 }
 
 function Editorial({ p }) {
-  return (
-    <div className="rise space-y-5" data-testid="editorial-content">
-      <div className="flex items-center gap-2 text-primary"><Lightbulb className="w-5 h-5" /><h2 className="font-heading text-xl font-bold">Approach</h2></div>
-      <p className="leading-7 text-[15px]">{p.editorial.approach}</p>
-      <div className="text-sm px-3 py-2 rounded-lg bg-secondary inline-block font-mono">{p.editorial.complexity}</div>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Python3</p>
-        <pre className="font-mono text-[13px] leading-6 p-4 rounded-xl bg-console border overflow-auto">{p.editorial.code}</pre>
-      </div>
-    </div>
-  );
+    const ed = p.editorial || {};
+    return (
+        <div className="rise space-y-5" data-testid="editorial-content">
+            <div className="flex items-center gap-2 text-primary">
+                <Lightbulb className="w-5 h-5" />
+                <h2 className="font-heading text-xl font-bold">Approach</h2>
+            </div>
+            <p className="leading-7 text-[15px]">{ed.approach || "See LeetCode for editorial."}</p>
+            {ed.complexity && (
+                <div className="text-sm px-3 py-2 rounded-lg bg-secondary inline-block font-mono">
+                    {ed.complexity}
+                </div>
+            )}
+            {ed.code && (
+                <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                        Reference Solution
+                    </p>
+                    <pre className="font-mono text-[13px] leading-6 p-4 rounded-xl bg-console border overflow-auto">
+            {ed.code}
+          </pre>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function Submissions({ slug, refreshKey, onLoad }) {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [rows, setRows] = useState(null);
-  useEffect(() => {
-    if (!user) return;
-    api.get("/submissions", { params: { slug } }).then(({ data }) => setRows(data));
-  }, [user, slug, refreshKey]);
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const [rows, setRows] = useState(null);
 
-  if (!user) return (
-    <div className="h-full grid place-items-center text-center py-16" data-testid="submissions-locked">
-      <div><Lock className="w-8 h-8 mx-auto text-muted-foreground mb-3" /><p className="text-muted-foreground text-sm mb-4">Sign in to see your submissions</p>
-        <button onClick={() => navigate("/login", { state: { from: `/problems/${slug}` } })} className="text-sm font-semibold px-4 py-2 rounded-full bg-primary text-primary-foreground" data-testid="submissions-login-button">Sign in</button></div>
-    </div>
-  );
-  if (!rows) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (!rows.length) return <p className="text-sm text-muted-foreground py-10 text-center" data-testid="submissions-empty">No submissions yet.</p>;
-  return (
-    <div className="divide-y rounded-xl border overflow-hidden" data-testid="submissions-list">
-      {rows.map((s) => (
-        <button key={s.submission_id} onClick={() => onLoad(s)} data-testid={`submission-row-${s.submission_id}`}
-          className="w-full grid grid-cols-[1fr_90px_80px] items-center px-4 py-3 text-left text-sm hover:bg-accent transition-colors">
+    useEffect(() => {
+        if (!user) return;
+        api.get("/submissions", { params: { slug } }).then(({ data }) => setRows(data));
+    }, [user, slug, refreshKey]);
+
+    if (!user) {
+        return (
+            <div className="h-full grid place-items-center text-center py-16" data-testid="submissions-locked">
+                <div>
+                    <Lock className="w-8 h-8 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground text-sm mb-4">Sign in to see your submissions</p>
+                    <button
+                        onClick={() => navigate("/login", { state: { from: `/problems/${slug}` } })}
+                        className="text-sm font-semibold px-4 py-2 rounded-full bg-primary text-primary-foreground"
+                        data-testid="submissions-login-button"
+                    >
+                        Sign in
+                    </button>
+                </div>
+            </div>
+        );
+    }
+    if (!rows) return <p className="text-sm text-muted-foreground">Loading…</p>;
+    if (!rows.length) {
+        return <p className="text-sm text-muted-foreground py-10 text-center" data-testid="submissions-empty">No submissions yet.</p>;
+    }
+
+    return (
+        <div className="divide-y rounded-xl border overflow-hidden" data-testid="submissions-list">
+            {rows.map((s) => (
+                <button
+                    key={s.submission_id}
+                    onClick={() => onLoad(s)}
+                    data-testid={`submission-row-${s.submission_id}`}
+                    className="w-full grid grid-cols-[1fr_90px_80px] items-center px-4 py-3 text-left text-sm hover:bg-accent transition-colors"
+                >
           <span>
-            <span className={`font-semibold ${s.status === "Accepted" ? "text-easy" : "text-hard"}`}>{s.status}</span>
-            <span className="block text-xs text-muted-foreground">{timeAgo(s.created_at)} · {s.passed}/{s.total} passed</span>
+            <span className={`font-semibold ${s.status === "Accepted" ? "text-easy" : "text-hard"}`}>
+              {s.status}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {timeAgo(s.created_at)} · {s.passed}/{s.total} passed
+            </span>
           </span>
-          <span className="text-xs px-2 py-1 rounded-full bg-secondary w-fit">{langLabel(s.language)}</span>
-          <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" />{s.runtimeMs} ms</span>
-        </button>
-      ))}
-    </div>
-  );
+                    <span className="text-xs px-2 py-1 rounded-full bg-secondary w-fit">
+            {langLabel(s.language)}
+          </span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <Clock className="w-3 h-3" />{s.runtimeMs} ms
+          </span>
+                </button>
+            ))}
+        </div>
+    );
 }
 
-const TABS = [["description", "Description"], ["solutions", "Editorial"], ["submissions", "Submissions"]];
+const TABS = [
+    ["description", "Description"],
+    ["solutions", "Editorial"],
+    ["submissions", "Submissions"],
+];
 
 export default function LeftPanel({ p, tab, setTab, refreshKey, onLoad }) {
-  return (
-    <div className="h-full flex flex-col bg-card rounded-lg border overflow-hidden">
-      <div className="h-10 flex items-center gap-1 px-2 border-b bg-secondary/50">
-        {TABS.map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} data-testid={`workspace-tab-${id}`}
-            className={`text-sm px-3 py-1 rounded-md transition-colors ${tab === id ? "bg-background font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 overflow-auto p-5">
-        {tab === "description" && <Description p={p} />}
-        {tab === "solutions" && <Editorial p={p} />}
-        {tab === "submissions" && <Submissions slug={p.slug} refreshKey={refreshKey} onLoad={onLoad} />}
-      </div>
-    </div>
-  );
+    return (
+        <div className="h-full flex flex-col bg-card rounded-lg border overflow-hidden">
+            <div className="h-10 flex items-center gap-1 px-2 border-b bg-secondary/50">
+                {TABS.map(([id, label]) => (
+                    <button
+                        key={id}
+                        onClick={() => setTab(id)}
+                        data-testid={`workspace-tab-${id}`}
+                        className={`text-sm px-3 py-1 rounded-md transition-colors ${
+                            tab === id ? "bg-background font-semibold" : "text-muted-foreground hover:text-foreground"
+                        }`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            <div className="flex-1 overflow-auto p-5">
+                {tab === "description" && <Description p={p} />}
+                {tab === "solutions" && <Editorial p={p} />}
+                {tab === "submissions" && <Submissions slug={p.slug} refreshKey={refreshKey} onLoad={onLoad} />}
+            </div>
+        </div>
+    );
 }

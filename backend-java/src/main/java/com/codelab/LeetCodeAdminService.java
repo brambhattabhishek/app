@@ -361,7 +361,9 @@ public class LeetCodeAdminService {
         List<Problem.Param> params = new ArrayList<>();
         String ret = "";
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
+        List<String> constraints = new ArrayList<>();
 
+        // ═══════════ STEP 1: Parse function signature from codeSnippets ═══════════
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
             JsonNode jsSnippet = null;
@@ -403,6 +405,43 @@ public class LeetCodeAdminService {
 
         String description = d.path("content").asText("");
 
+        // ═══════════ STEP 2: Parse CONSTRAINTS from description HTML ═══════════
+        if (!description.isEmpty()) {
+            // Pattern: <strong>Constraints:</strong> ... <ul>...</ul>
+            Pattern constraintsPattern = Pattern.compile(
+                    "Constraints:\\s*</strong>(.*?)(?:<strong>|$)",
+                    Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+            );
+            Matcher cm = constraintsPattern.matcher(description);
+            if (cm.find()) {
+                String block = cm.group(1);
+
+                // Extract each <li> as one constraint
+                Pattern liPattern = Pattern.compile("<li>(.*?)</li>", Pattern.DOTALL);
+                Matcher lm = liPattern.matcher(block);
+                while (lm.find()) {
+                    String c = lm.group(1)
+                            .replaceAll("<[^>]*>", "")   // strip HTML tags
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">")
+                            .replace("&amp;", "&")
+                            .replace("&nbsp;", " ")
+                            .replace("&times;", "×")
+                            .replace("&le;", "≤")
+                            .replace("&ge;", "≥")
+                            .replace("&#39;", "'")
+                            .replace("&quot;", "\"")
+                            .replaceAll("\\s+", " ")
+                            .trim();
+
+                    if (!c.isEmpty() && c.length() < 500) {
+                        constraints.add(c);
+                    }
+                }
+            }
+        }
+
+        // ═══════════ STEP 3: Parse expected outputs from description ═══════════
         List<String> expectedOutputs = new ArrayList<>();
         if (!description.isEmpty()) {
             String text = description
@@ -427,6 +466,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 4: Parse sample tests from exampleTestcases ═══════════
         String exampleTestcases = d.path("exampleTestcases").asText("");
         if (!exampleTestcases.isEmpty()) {
             String[] lines = exampleTestcases.split("\n");
@@ -456,6 +496,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 5: Fallback — sampleTestCase ═══════════
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -475,6 +516,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ═══════════ STEP 6: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -489,7 +531,7 @@ public class LeetCodeAdminService {
                 .params(params)
                 .ret(ret)
                 .description(description)
-                .constraints(new ArrayList<>())
+                .constraints(constraints)              // ★ NOW PARSED
                 .sampleTests(sampleTests)
                 .hiddenTests(new ArrayList<>())
                 .editorial(Problem.Editorial.builder()

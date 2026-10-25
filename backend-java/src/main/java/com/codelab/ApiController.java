@@ -104,21 +104,36 @@ public class ApiController {
         Document u = auth.optional(h);
         if (u != null) progress(u, slug, new Document("last_opened", new Date()));
 
-        Map<String, Object> m = clean(d);          // removes _id
+        Map<String, Object> m = clean(d);
         m.remove("hiddenTests");
 
-        // ★ FIX: id fallback — try "id" first, then "_id"
+        // ★ id fallback
         Object idObj = d.get("id");
         if (idObj == null) idObj = d.get("_id");
         m.put("id", idObj);
 
-        // ★ Companies from ProblemMeta
+        // ★ Load meta (hints, constraints, companies, edge cases, explanation)
         var metaOpt = metaRepo.findBySlug(slug);
-        m.put("companies", metaOpt.map(ProblemMeta::getCompanies).orElse(List.of()));
+        if (metaOpt.isPresent()) {
+            ProblemMeta meta = metaOpt.get();
+            m.put("hints", meta.getHints() != null ? meta.getHints() : List.of());
+            m.put("companies", meta.getCompanies() != null ? meta.getCompanies() : List.of());
+            m.put("edgeCases", meta.getEdgeCases() != null ? meta.getEdgeCases() : List.of());
+            m.put("explanation", meta.getExplanation() != null ? meta.getExplanation() : "");
+        } else {
+            m.put("hints", List.of());
+            m.put("companies", List.of());
+            m.put("edgeCases", List.of());
+            m.put("explanation", "");
+        }
+
+        // ★ Ensure constraints is present (may be missing in old documents)
+        if (m.get("constraints") == null) {
+            m.put("constraints", List.of());
+        }
 
         // ★ Boilerplates
         m.put("boilerplates", CodeTemplates.boilerplates(d));
-
         return m;
     }
 

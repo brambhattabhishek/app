@@ -35,7 +35,7 @@ export default function Workspace() {
     queryKey: ["problem", slug],
     queryFn: async () => (await api.get(`/problems/${slug}`)).data,
     enabled: !!slug,
-    staleTime: 5 * 60 * 1000,        // 5 min
+    staleTime: 5 * 60 * 1000,
     placeholderData: (prev) => prev,
   });
 
@@ -121,7 +121,6 @@ export default function Workspace() {
       queryClient.invalidateQueries({ queryKey: ["recommendations"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       queryClient.invalidateQueries({ queryKey: ["company"] });
-      // Don't invalidate ["problem", slug] — but let's update it if needed
       queryClient.invalidateQueries({ queryKey: ["problem", slug] });
     } catch (e) {
       toast.error(errMsg(e));
@@ -136,7 +135,7 @@ export default function Workspace() {
     toast("Loaded submission into editor");
   };
 
-  // Loading state — only on first load (no cache)
+  // Loading state
   if (isLoading && !p) {
     return (
         <div className="h-[calc(100vh-48px)] grid place-items-center">
