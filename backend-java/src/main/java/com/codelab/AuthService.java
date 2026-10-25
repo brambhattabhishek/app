@@ -17,11 +17,9 @@ import static com.mongodb.client.model.Filters.eq;
 public class AuthService {
     @Autowired MongoTemplate mongo;
     @Autowired Notifier notifier;
-    @Autowired JwtService jwtService; // ★ JWTService inject kiya
+    @Autowired JwtService jwtService;
 
     static final long ACTIVE_TOUCH_MS = 5 * 60_000L;
-
-    // ★ PURANA token() METHOD HATA DIYA, AB JwtService SIGN KAREGA
 
     public Document optional(String header) {
         if (header == null || !header.startsWith("Bearer ")) return null;
@@ -72,32 +70,5 @@ public class AuthService {
     public static String ip(HttpServletRequest req) {
         String f = req.getHeader("X-Forwarded-For");
         return f != null && !f.isBlank() ? f.split(",")[0].trim() : req.getRemoteAddr();
-    }
-
-    public Map<String, Object> login(Document u, boolean isNew, String method, HttpServletRequest req) {
-        Date prevActive = u.getDate("last_active_at");
-        Date now = new Date();
-        String ua = Optional.ofNullable(req.getHeader("User-Agent")).orElse("");
-
-        mongo.getCollection("users").updateOne(eq("user_id", u.getString("user_id")), new Document("$set",
-                new Document("last_login_at", now).append("last_active_at", now).append("last_ip", ip(req)).append("last_user_agent", ua))
-                .append("$inc", new Document("login_count", 1)).append("$addToSet", new Document("providers", method)));
-
-        String greeting = notifier.greet(u, isNew, prevActive);
-
-        mongo.getCollection("events").insertOne(new Document("type", "login").append("user_id", u.getString("user_id")).append("method", method)
-                .append("new_user", isNew).append("greeting", greeting).append("ip", ip(req)).append("ua", ua).append("created_at", now));
-
-        Document fresh = mongo.getCollection("users").find(eq("user_id", u.getString("user_id"))).first();
-
-        // ★ JwtService se token banwa rahe hain
-        String role = fresh.getString("role") == null ? "USER" : fresh.getString("role");
-        String token = jwtService.sign(fresh.getString("user_id"), fresh.getString("email"), role);
-
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("token", token);
-        m.put("user", publicUser(fresh));
-        m.put("greeting", greeting);
-        return m;
     }
 }

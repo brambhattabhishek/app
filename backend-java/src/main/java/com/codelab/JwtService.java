@@ -24,16 +24,17 @@ public class JwtService {
     private SecretKey key() {
         if (secret == null || secret.isBlank()) {
             throw new IllegalStateException(
-                    "❌ JWT_SECRET is missing! Set env var JWT_SECRET (min 32 chars, 64 recommended for HS512)."
+                    "❌ JWT_SECRET environment variable is missing! " +
+                            "Set it in Render (Dashboard → Environment) to a 64+ char random string."
             );
         }
 
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-
-        if (keyBytes.length < 32) {
+        if (keyBytes.length < 64) {
             throw new IllegalStateException(
-                    "❌ JWT_SECRET too short! Current: " + keyBytes.length + " chars. " +
-                            "Minimum 32 chars required (64+ for HS512)."
+                    "❌ JWT_SECRET is too short! Current: " + keyBytes.length + " chars. " +
+                            "HS512 requires at least 64 chars. " +
+                            "Generate one with: openssl rand -hex 64"
             );
         }
 
@@ -44,7 +45,7 @@ public class JwtService {
         Date now = new Date();
         return Jwts.builder()
                 .subject(userId)
-                .claim("email", email)
+                .claim("email", email != null ? email : "")
                 .claim("role", role == null ? "USER" : role)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expiryMs))

@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.*;
 
+import static com.codelab.AuthService.publicUser;
 import static com.mongodb.client.model.Filters.*;
 
 @RestController
@@ -31,6 +32,7 @@ public class AuthController {
     @Autowired MongoTemplate mongo;
     @Autowired AuthService auth;
     @Autowired Notifier notifier;
+    @Autowired JwtService jwtService;
     private final BCryptPasswordEncoder enc = new BCryptPasswordEncoder();
     private final HttpClient http = HttpClient.newHttpClient();
     private final ObjectMapper om = new ObjectMapper();
@@ -59,14 +61,11 @@ public class AuthController {
                 .append("created_at", new Date());
     }
 
-    // ★ Helper — normalise role for public-facing payloads
     static String roleOf(Document u) {
         String r = u.getString("role");
         return r == null ? "USER" : r.toUpperCase();
     }
 
-    // ★ True admin bootstrap — only the address in ADMIN_EMAIL env var can auto-become admin.
-    //   Set ADMIN_EMAIL=admin@yourdomain.com in the environment before first registration.
     static boolean isBootstrapAdminEmail(String email) {
         String adminEmail = Notifier.env("ADMIN_EMAIL");
         return adminEmail != null && email != null && adminEmail.trim().equalsIgnoreCase(email.trim());
@@ -93,10 +92,13 @@ public class AuthController {
         String name = r.name() == null || r.name().isBlank() ? email.split("@")[0] : r.name().trim();
         Document u = newUser(name, "email").append("email", email).append("password_hash", enc.encode(r.password()));
 
+        if (isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
+
         users().insertOne(u);
-        return auth.login(u, true, "email", req);
+        return loginInternal(u, true, "email", req);
     }
 
+    // ★ CRITICAL FIX: Missing @PostMapping("/login") endpoint
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody LoginReq r, HttpServletRequest req) {
         String email = r.email() == null ? "" : r.email().trim().toLowerCase();
@@ -116,24 +118,56 @@ public class AuthController {
 
         // Backfill role for old users
         if (u.getString("role") == null) {
-            String role = "USER";
+            String role = isBootstrapAdminEmail(email) ? "ADMIN" : "USER";
             users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
             u.put("role", role);
         }
 
-        return auth.login(u, false, "email", req);
+        return loginInternal(u, false, "email", req);
+    }
+
+    // ★ Internal method (renamed from login → loginInternal)
+    private Map<String, Object> loginInternal(Document u, boolean isNew, String method, HttpServletRequest req) {
+        Date prevActive = u.getDate("last_active_at");
+        Date now = new Date();
+        String ua = Optional.ofNullable(req.getHeader("User-Agent")).orElse("");
+
+        mongo.getCollection("users").updateOne(eq("user_id", u.getString("user_id")), new Document("$set",
+                new Document("last_login_at", now).append("last_active_at", now).append("last_ip", AuthService.ip(req)).append("last_user_agent", ua))
+                .append("$inc", new Document("login_count", 1)).append("$addToSet", new Document("providers", method)));
+
+        String greeting = notifier.greet(u, isNew, prevActive);
+
+        mongo.getCollection("events").insertOne(new Document("type", "login").append("user_id", u.getString("user_id")).append("method", method)
+                .append("new_user", isNew).append("greeting", greeting).append("ip", AuthService.ip(req)).append("ua", ua).append("created_at", now));
+
+        // ★ NPE-safe
+        Document fresh = mongo.getCollection("users").find(eq("user_id", u.getString("user_id"))).first();
+        if (fresh == null) {
+            if (u.getString("email") != null) {
+                fresh = mongo.getCollection("users").find(eq("email", u.getString("email"))).first();
+            }
+            if (fresh == null) fresh = u;
+        }
+
+        String role = fresh.getString("role") == null ? "USER" : fresh.getString("role");
+        String token = jwtService.sign(fresh.getString("user_id"), fresh.getString("email"), role);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("token", token);
+        m.put("user", publicUser(fresh));
+        m.put("greeting", greeting);
+        return m;
     }
 
     @GetMapping("/me")
     public Map<String, Object> me(@RequestHeader(value = "Authorization", required = false) String h) {
         Document u = auth.require(h);
-        return AuthService.publicUser(u);
+        Map<String, Object> out = publicUser(u);
+        out.put("isAdmin", "ADMIN".equals(roleOf(u)));
+        return out;
     }
 
-    /**
-     * ★ Admin-only: promote / demote any user by email.
-     * Called from Admin page. Body: { "email": "...", "role": "ADMIN" | "USER" }
-     */
     @PostMapping("/admin/promote")
     @PreAuthorize("hasRole('ADMIN')")
     public Map<String, Object> promote(@RequestBody Map<String, String> body) {
@@ -147,8 +181,6 @@ public class AuthController {
         return Map.of("email", email, "role", role, "ok", true);
     }
 
-
-    /** ★ Admin-only: list every admin. Useful for the Admin panel "who can add problems" card. */
     @GetMapping("/admin/list-admins")
     @PreAuthorize("hasRole('ADMIN')")
     public List<Map<String, Object>> listAdmins() {
@@ -162,7 +194,6 @@ public class AuthController {
         return out;
     }
 
-    /** Find by provider id, then link by verified email, else create. */
     Map<String, Object> upsertSocial(String idField, String idValue, String email, String name, String picture, String provider,
                                      Document extra, HttpServletRequest req) {
         Document u = idField == null ? null : users().find(eq(idField, idValue)).first();
@@ -172,7 +203,6 @@ public class AuthController {
             u = newUser(name == null || name.isBlank() ? (email != null ? email.split("@")[0] : "Coder") : name, provider).append("picture", picture);
             if (email != null) u.append("email", email);
             if (idField != null) u.append(idField, idValue);
-            // ★ Social signup via bootstrap admin email also gets ADMIN
             if (email != null && isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
             u.putAll(extra);
             users().insertOne(u);
@@ -180,14 +210,13 @@ public class AuthController {
             Document set = new Document(extra);
             if (idField != null) set.append(idField, idValue);
             if (picture != null && u.getString("picture") == null) set.append("picture", picture);
-            // ★ Backfill role for social users from legacy accounts
             if (u.getString("role") == null) {
                 set.append("role", email != null && isBootstrapAdminEmail(email) ? "ADMIN" : "USER");
             }
             if (!set.isEmpty()) users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", set));
             u.putAll(set);
         }
-        return auth.login(u, isNew, provider, req);
+        return loginInternal(u, isNew, provider, req);
     }
 
     @PostMapping("/google")
@@ -202,7 +231,6 @@ public class AuthController {
         return upsertSocial(null, null, email, j.path("name").asText(), j.path("picture").asText(null), "google", new Document(), req);
     }
 
-    // ---------- GitHub / LinkedIn OAuth (authorization code flow, state stored server-side) ----------
     static final Map<String, String[]> OAUTH = Map.of(
             "github", new String[]{"GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "https://github.com/login/oauth/authorize", "read:user user:email"},
             "linkedin", new String[]{"LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "https://www.linkedin.com/oauth/v2/authorization", "openid profile email"});
@@ -267,7 +295,6 @@ public class AuthController {
         return om.readTree(r.body());
     }
 
-    // ---------- Mobile OTP (Twilio Verify, or DEMO mode when Twilio isn't configured) ----------
     @PostMapping("/otp/send")
     public Map<String, Object> otpSend(@RequestBody OtpReq r) throws Exception {
         String phone = r.phone() == null ? "" : r.phone().replaceAll("[\\s-]", "");
@@ -319,6 +346,6 @@ public class AuthController {
             u = newUser("Coder " + phone.substring(phone.length() - 4), "phone").append("phone", phone);
             users().insertOne(u);
         }
-        return auth.login(u, isNew, "phone", req);
+        return loginInternal(u, isNew, "phone", req);
     }
 }
