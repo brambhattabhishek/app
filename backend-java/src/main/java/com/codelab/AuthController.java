@@ -102,30 +102,64 @@ public class AuthController {
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody LoginReq r, HttpServletRequest req) {
         String email = r.email() == null ? "" : r.email().trim().toLowerCase();
+
+        // ★ DEBUG LOGS
+        System.out.println("═══ LOGIN ATTEMPT ═══");
+        System.out.println("  email: [" + email + "]");
+        System.out.println("  password length: " + (r.password() != null ? r.password().length() : "NULL"));
+        System.out.println("  IP: " + AuthService.ip(req));
+
         String ident = AuthService.ip(req) + ":" + email;
         var attempts = mongo.getCollection("login_attempts");
         Document a = attempts.find(eq("identifier", ident)).first();
-        if (a != null && a.getInteger("count", 0) >= 5 && System.currentTimeMillis() - a.getDate("last").getTime() < 15 * 60_000L)
+        if (a != null && a.getInteger("count", 0) >= 5 && System.currentTimeMillis() - a.getDate("last").getTime() < 15 * 60_000L) {
+            System.out.println("  ✗ BLOCKED: too many attempts (count=" + a.getInteger("count", 0) + ")");
             throw err(HttpStatus.TOO_MANY_REQUESTS, "Too many failed attempts. Try again in 15 minutes.");
+        }
+
         Document u = users().find(eq("email", email)).first();
+        System.out.println("  user found: " + (u != null));
+        if (u != null) {
+            System.out.println("  user_id: " + u.getString("user_id"));
+            System.out.println("  has password_hash: " + (u.getString("password_hash") != null));
+            System.out.println("  role: " + u.getString("role"));
+        }
+
         if (u == null || u.getString("password_hash") == null || r.password() == null || !enc.matches(r.password(), u.getString("password_hash"))) {
+            System.out.println("  ✗ LOGIN FAILED: invalid credentials");
+            if (u != null && u.getString("password_hash") == null) {
+                System.out.println("  → User exists but has NO password (social/phone login)");
+            } else if (u != null) {
+                System.out.println("  → Password mismatch");
+            } else {
+                System.out.println("  → User does not exist");
+            }
             attempts.updateOne(eq("identifier", ident), new Document("$inc", new Document("count", 1)).append("$set", new Document("last", new Date())),
                     new com.mongodb.client.model.UpdateOptions().upsert(true));
             throw err(HttpStatus.UNAUTHORIZED, u != null && u.getString("password_hash") == null
                     ? "This account uses social / phone login. Use that method instead." : "Invalid email or password");
         }
+
+        System.out.println("  ✓ PASSWORD MATCHED");
         attempts.deleteOne(eq("identifier", ident));
 
-        // Backfill role for old users
         if (u.getString("role") == null) {
             String role = isBootstrapAdminEmail(email) ? "ADMIN" : "USER";
             users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
             u.put("role", role);
+            System.out.println("  → Backfilled role: " + role);
         }
 
-        return loginInternal(u, false, "email", req);
+        try {
+            Map<String, Object> result = loginInternal(u, false, "email", req);
+            System.out.println("  ✓ LOGIN SUCCESS: token generated, user=" + ((Document)result.get("user")).getString("user_id"));
+            return result;
+        } catch (Exception e) {
+            System.out.println("  ✗ LOGIN EXCEPTION in loginInternal: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
-
     // ★ Internal method (renamed from login → loginInternal)
     private Map<String, Object> loginInternal(Document u, boolean isNew, String method, HttpServletRequest req) {
         Date prevActive = u.getDate("last_active_at");
