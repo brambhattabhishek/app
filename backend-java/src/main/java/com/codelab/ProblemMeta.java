@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.ArrayList;
@@ -17,19 +18,21 @@ import java.util.List;
 @Document(collection = "problem_meta")
 public class ProblemMeta {
 
-    /** LeetCode problem number — same id as Problem.id */
     @Id
     private Integer id;
 
-    @Builder.Default
-    private List<String> companies   = new ArrayList<>();
+    @Indexed(unique = true)
+    private String slug;
 
     @Builder.Default
-    private List<String> hints       = new ArrayList<>();
+    private List<String> companies = new ArrayList<>();
 
     @Builder.Default
-    private List<String> edgeCases   = new ArrayList<>();
+    private List<String> hints = new ArrayList<>();
 
     @Builder.Default
-    private String       explanation = "";
+    private List<String> edgeCases = new ArrayList<>();
+
+    @Builder.Default
+    private String explanation = "";
 }

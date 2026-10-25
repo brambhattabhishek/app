@@ -536,7 +536,8 @@ public class LeetCodeAdminService {
 
         return ProblemMeta.builder()
                 .id(num)
-                .companies(new ArrayList<>())  // ← Free users ke liye khaali
+                .slug(d.path("titleSlug").asText())        // ★ ADD THIS LINE
+                .companies(new ArrayList<>())
                 .hints(hints)
                 .edgeCases(new ArrayList<>())
                 .explanation("")
@@ -657,7 +658,9 @@ public class LeetCodeAdminService {
         if (j.path("edgeCases").isArray()) j.path("edgeCases").forEach(e -> edges.add(e.asText()));
 
         return ProblemMeta.builder()
-                .id(id).hints(hints).companies(companies).edgeCases(edges)
+                .id(id)
+                .slug(j.path("slug").asText(""))        // ★ ADD THIS LINE
+                .hints(hints).companies(companies).edgeCases(edges)
                 .explanation(j.path("explanation").asText("")).build();
     }
 

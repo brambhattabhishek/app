@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     Users, Activity, LogIn, Eye, Send, Plus, Loader2,
-    Database, RefreshCw, ShieldCheck
+    Database, RefreshCw, Building2
 } from "lucide-react";
 import { api, errMsg, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -33,7 +33,6 @@ const AddProblemsPanel = ({ onAdded }) => {
             setResult({ ok: true, added: data?.added ?? [] });
             setNumbers("");
 
-            // ★ Invalidate all related caches
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
@@ -77,7 +76,61 @@ const AddProblemsPanel = ({ onAdded }) => {
     );
 };
 
-// ── 2. System Tools Panel ──────────────────────────────────────────
+// ── 2. Company Import Panel ────────────────────────────────────────
+const CompanyImportPanel = () => {
+    const queryClient = useQueryClient();
+    const [companies, setCompanies] = useState("Accenture, Amazon, Google, Microsoft, Meta");
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+
+    const submit = async () => {
+        const list = companies.split(",").map(s => s.trim()).filter(Boolean);
+        if (!list.length) return;
+        setBusy(true);
+        setResult(null);
+        try {
+            const { data } = await api.post("/admin/leetcode/import-companies", { companies: list });
+            setResult({ ok: true, summary: data.result?._summary });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+        } catch (e) {
+            setResult({ ok: false, error: errMsg(e) });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <section className="rounded-xl border bg-card p-4" data-testid="admin-company-import">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                Import Companies from GitHub
+            </p>
+            <textarea
+                value={companies}
+                onChange={(e) => setCompanies(e.target.value)}
+                placeholder="Accenture, Amazon, Google, Microsoft, Meta"
+                className="w-full h-20 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 mb-2"
+                disabled={busy}
+            />
+            <button
+                onClick={submit}
+                disabled={busy || !companies.trim()}
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            >
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
+                {busy ? "Importing…" : "Import Companies"}
+            </button>
+            {result?.ok && result.summary && (
+                <p className="mt-2 text-xs text-green-500">
+                    Imported {result.summary.totalCompanies} companies, updated {result.summary.totalProblemsUpdated} problems
+                </p>
+            )}
+            {result && !result.ok && <p className="mt-2 text-xs text-red-500">{result.error}</p>}
+        </section>
+    );
+};
+
+// ── 3. System Tools Panel ──────────────────────────────────────────
 const SystemToolsPanel = ({ onMigrated }) => {
     const queryClient = useQueryClient();
     const [busy, setBusy] = useState(false);
@@ -131,7 +184,7 @@ const SystemToolsPanel = ({ onMigrated }) => {
     );
 };
 
-// ── 3. User Role Action ────────────────────────────────────────────
+// ── 4. User Role Action ────────────────────────────────────────────
 const UserRoleAction = ({ user, onAction }) => {
     const [busy, setBusy] = useState(false);
 
@@ -165,12 +218,11 @@ const UserRoleAction = ({ user, onAction }) => {
 export default function AdminPage() {
     const { user } = useAuth();
 
-    // ★ TanStack Query for admin overview
     const { data: d, isLoading, error: queryError } = useQuery({
         queryKey: ["admin-overview"],
         queryFn: async () => (await api.get("/admin/overview")).data,
         enabled: !!user && user !== false,
-        staleTime: 2 * 60 * 1000,        // 2 min — admin panel frequently viewed
+        staleTime: 2 * 60 * 1000,
         refetchOnWindowFocus: true,
         placeholderData: (prev) => prev,
     });
@@ -182,7 +234,6 @@ export default function AdminPage() {
 
     const error = queryError ? errMsg(queryError) : null;
 
-    // Guards
     if (user === false) return <Navigate to="/login" state={{ from: "/admin" }} replace />;
     if (user && !user.isAdmin && user.role !== "ADMIN") return <Navigate to="/" replace />;
 
@@ -205,9 +256,10 @@ export default function AdminPage() {
                 </div>
             </div>
 
-            {/* Action Panels */}
-            <div className="grid lg:grid-cols-2 gap-4">
+            {/* ★ Action Panels — 3 columns now, CompanyImportPanel visible */}
+            <div className="grid lg:grid-cols-3 gap-4">
                 <AddProblemsPanel onAdded={loadOverview} />
+                <CompanyImportPanel />
                 <SystemToolsPanel onMigrated={loadOverview} />
             </div>
 
