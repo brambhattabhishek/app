@@ -57,3 +57,34 @@ export function useCompanyQuery(name) {
         placeholderData: (prev) => prev,
     });
 }
+
+export function useDailyChallengeQuery() {
+    const { user } = useAuth();
+
+    return useQuery({
+        queryKey: ["daily", user?.user_id || "guest"],
+        queryFn: async () => {
+            const { data } = await api.get("/daily");
+            return data;
+        },
+        enabled: user !== null && user !== false,
+        placeholderData: (prev) => prev,
+        staleTime: 10 * 60 * 1000,        // 10 min — daily same rehta hai
+        refetchOnMount: false,
+    });
+}
+
+export function useRecommendationsQuery() {
+    const { user } = useAuth();
+
+    return useQuery({
+        queryKey: ["recommendations", user?.user_id || "guest"],
+        queryFn: async () => {
+            const { data } = await api.get("/recommendations");
+            return data;
+        },
+        enabled: !!user && user !== false,      // only logged-in
+        placeholderData: (prev) => prev,
+        staleTime: 5 * 60 * 1000,               // 5 min
+    });
+}

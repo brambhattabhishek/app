@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Navigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     Users, Activity, LogIn, Eye, Send, Plus, Loader2,
     Database, RefreshCw, ShieldCheck
@@ -17,6 +18,7 @@ const Stat = ({ icon: Icon, label, value, id }) => (
 
 // ── 1. Add Problems Panel ──────────────────────────────────────────
 const AddProblemsPanel = ({ onAdded }) => {
+    const queryClient = useQueryClient();
     const [numbers, setNumbers] = useState("");
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState(null);
@@ -30,6 +32,12 @@ const AddProblemsPanel = ({ onAdded }) => {
             const { data } = await api.post("/admin/leetcode/add", { numbers: trimmed });
             setResult({ ok: true, added: data?.added ?? [] });
             setNumbers("");
+
+            // ★ Invalidate all related caches
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+
             onAdded?.();
         } catch (e) {
             setResult({ ok: false, error: errMsg(e) });
@@ -71,6 +79,7 @@ const AddProblemsPanel = ({ onAdded }) => {
 
 // ── 2. System Tools Panel ──────────────────────────────────────────
 const SystemToolsPanel = ({ onMigrated }) => {
+    const queryClient = useQueryClient();
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
 
@@ -80,6 +89,9 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             const { data } = await api.post("/admin/leetcode/migrate-json");
             setMsg({ ok: true, text: `Migrated ${data.migrated} problems to DB.` });
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
             onMigrated?.();
         } catch (e) {
             setMsg({ ok: false, text: errMsg(e) });
@@ -92,6 +104,9 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             await api.post("/admin/leetcode/fetch-all", {});
             setMsg({ ok: true, text: "Background sync started. Check logs." });
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
         } catch (e) {
             const is409 = e?.response?.status === 409;
             setMsg({ ok: false, text: is409 ? "Already running." : errMsg(e) });
@@ -149,29 +164,26 @@ const UserRoleAction = ({ user, onAction }) => {
 // ── Main Admin Page ────────────────────────────────────────────────
 export default function AdminPage() {
     const { user } = useAuth();
-    const [d, setD] = useState(null);
-    const [error, setError] = useState(null);
 
+    // ★ TanStack Query for admin overview
+    const { data: d, isLoading, error: queryError } = useQuery({
+        queryKey: ["admin-overview"],
+        queryFn: async () => (await api.get("/admin/overview")).data,
+        enabled: !!user && user !== false,
+        staleTime: 2 * 60 * 1000,        // 2 min — admin panel frequently viewed
+        refetchOnWindowFocus: true,
+        placeholderData: (prev) => prev,
+    });
+
+    const queryClient = useQueryClient();
     const loadOverview = () => {
-        setError(null);
-        api.get("/admin/overview")
-            .then(({ data }) => setD(data))
-            .catch((e) => setError(errMsg(e)));
+        queryClient.invalidateQueries({ queryKey: ["admin-overview"] });
     };
 
-    useEffect(() => {
-        if (!user) return;
-        let alive = true;
-        api.get("/admin/overview")
-            .then(({ data }) => alive && setD(data))
-            .catch((e) => alive && setError(errMsg(e)));
-        return () => { alive = false; };
-    }, [user]);
+    const error = queryError ? errMsg(queryError) : null;
 
     // Guards
     if (user === false) return <Navigate to="/login" state={{ from: "/admin" }} replace />;
-    // Agar backend se isAdmin nahi aa raha, toh frontend block ho jayega.
-    // Par backend mein fix aane tak, ye role check ensure karega ki Admin ko block na kare.
     if (user && !user.isAdmin && user.role !== "ADMIN") return <Navigate to="/" replace />;
 
     if (error) return (
@@ -180,7 +192,8 @@ export default function AdminPage() {
             <button onClick={() => window.location.reload()} className="px-4 py-2 bg-primary text-white rounded-md text-sm">Retry</button>
         </div>
     );
-    if (!d) return <div className="p-10 text-muted-foreground text-sm text-center">Loading…</div>;
+    if (isLoading && !d) return <div className="p-10 text-muted-foreground text-sm text-center">Loading…</div>;
+    if (!d) return <div className="p-10 text-muted-foreground text-sm text-center">No data available</div>;
 
     return (
         <main className="relative z-10 max-w-7xl mx-auto px-6 py-10 space-y-6" data-testid="admin-page">
