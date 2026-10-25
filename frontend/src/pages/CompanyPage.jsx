@@ -30,7 +30,7 @@ export default function CompanyPage() {
         return <div className="p-10 text-sm text-muted-foreground" data-testid="company-loading">Loading…</div>;
     }
 
-    // No data (shouldn't happen after isError/isLoading checks, but defensive)
+    // No data
     if (!d) {
         return <div className="p-10 text-sm text-muted-foreground">No data available</div>;
     }
@@ -64,8 +64,8 @@ export default function CompanyPage() {
                         <div className="flex justify-between text-sm mb-1.5">
                             <span className="font-semibold">Your progress</span>
                             <span className="text-muted-foreground">
-                {d.solved}/{d.total} · {pct}%
-              </span>
+                                {d.solved}/{d.total} · {pct}%
+                            </span>
                         </div>
                         <div className="h-2 rounded-full bg-secondary overflow-hidden">
                             <div
@@ -76,8 +76,8 @@ export default function CompanyPage() {
                         <div className="flex gap-4 mt-2 text-xs">
                             {["Easy", "Medium", "Hard"].map((k) => (
                                 <span key={k} className={diffCls[k]}>
-                  {k} {d.byDifficulty?.[k]?.solved ?? 0}/{d.byDifficulty?.[k]?.total ?? 0}
-                </span>
+                                    {k} {d.byDifficulty?.[k]?.solved ?? 0}/{d.byDifficulty?.[k]?.total ?? 0}
+                                </span>
                             ))}
                         </div>
                     </div>
@@ -96,22 +96,22 @@ export default function CompanyPage() {
                             data-testid={`company-problem-${p.id}`}
                             className="grid grid-cols-[32px_1fr_90px_70px] items-center px-4 h-12 text-sm hover:bg-accent transition-colors"
                         >
-              <span>
-                {p.status === "solved" ? (
-                    <CheckCircle2 className="w-4 h-4 text-easy" />
-                ) : p.status === "attempted" ? (
-                    <CircleDashed className="w-4 h-4 text-medium" />
-                ) : null}
-              </span>
+                            <span>
+                                {p.status === "solved" ? (
+                                    <CheckCircle2 className="w-4 h-4 text-easy" />
+                                ) : p.status === "attempted" ? (
+                                    <CircleDashed className="w-4 h-4 text-medium" />
+                                ) : null}
+                            </span>
                             <span className="font-medium truncate">
-                {p.id}. {p.title}
-              </span>
+                                {p.id}. {p.title}
+                            </span>
                             <span className="text-muted-foreground">
-                {(p.acceptance ?? 0).toFixed(1)}%
-              </span>
+                                {(p.acceptance ?? 0).toFixed(1)}%
+                            </span>
                             <span className={`font-semibold ${diffCls[p.difficulty]}`}>
-                {p.difficulty}
-              </span>
+                                {p.difficulty}
+                            </span>
                         </Link>
                     ))
                 ) : (

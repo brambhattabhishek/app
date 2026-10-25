@@ -24,6 +24,8 @@ public class ApiController {
     @Autowired Executor executor;
     @Autowired AuthService auth;
     @Autowired DailyController daily;
+    @Autowired ProblemMetaRepository metaRepo;   // ★ NEW — for companies endpoint
+
     static final List<String> LANGS = List.of("python", "java", "cpp", "javascript");
 
     record RunReq(String slug, String language, String code, List<String> inputs) {}
@@ -64,23 +66,32 @@ public class ApiController {
                 if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
             }
         }
-        List<Map<String, Object>> out = new ArrayList<>();
 
-        // ★ FIX: Sort by "_id" (never null, always present)
+        // ★ Load all companies from ProblemMeta (map slug -> companies)
+        Map<String, List<String>> companiesBySlug = new HashMap<>();
+        for (ProblemMeta meta : metaRepo.findAll()) {
+            if (meta.getSlug() != null && meta.getCompanies() != null) {
+                companiesBySlug.put(meta.getSlug(), meta.getCompanies());
+            }
+        }
+
+        List<Map<String, Object>> out = new ArrayList<>();
         for (Document d : mongo.getCollection("problems").find().sort(new Document("_id", 1))) {
             Map<String, Object> m = new LinkedHashMap<>();
 
-            // ★ FIX: id fallback to _id
             Object idObj = d.get("id");
             if (idObj == null) idObj = d.get("_id");
             m.put("id", idObj);
 
-            for (String k : List.of("slug", "title", "difficulty", "tags", "acceptance", "companies")) {
+            for (String k : List.of("slug", "title", "difficulty", "tags", "acceptance")) {
                 m.put(k, d.get(k));
             }
 
-            String sl = d.getString("slug");
-            m.put("status", solved.contains(sl) ? "solved" : attempted.contains(sl) ? "attempted" : "todo");
+            // ★ Use companies from ProblemMeta
+            String slug = d.getString("slug");
+            m.put("companies", companiesBySlug.getOrDefault(slug, List.of()));
+
+            m.put("status", solved.contains(slug) ? "solved" : attempted.contains(slug) ? "attempted" : "todo");
             out.add(m);
         }
         return out;
@@ -93,6 +104,11 @@ public class ApiController {
         if (u != null) progress(u, slug, new Document("last_opened", new Date()));
         Map<String, Object> m = clean(d);
         m.remove("hiddenTests");
+
+        // ★ Add companies from ProblemMeta
+        var metaOpt = metaRepo.findBySlug(slug);
+        m.put("companies", metaOpt.map(ProblemMeta::getCompanies).orElse(List.of()));
+
         m.put("boilerplates", CodeTemplates.boilerplates(d));
         return m;
     }
@@ -176,7 +192,16 @@ public class ApiController {
 
     static Map<String, Object> summary(Document d) {
         Map<String, Object> m = new LinkedHashMap<>();
-        for (String k : List.of("id", "slug", "title", "difficulty", "tags", "acceptance", "companies")) m.put(k, d.get(k));
+        for (String k : List.of("id", "slug", "title", "difficulty", "tags", "acceptance")) m.put(k, d.get(k));
+        return m;
+    }
+
+    // ★ Overloaded summary with companies from ProblemMeta
+    Map<String, Object> summaryWithCompanies(Document d) {
+        Map<String, Object> m = summary(d);
+        String slug = d.getString("slug");
+        var metaOpt = metaRepo.findBySlug(slug);
+        m.put("companies", metaOpt.map(ProblemMeta::getCompanies).orElse(List.of()));
         return m;
     }
 
@@ -195,7 +220,7 @@ public class ApiController {
         for (Document pr : mongo.getCollection("progress").find(eq("user_id", uid)).sort(new Document("last_opened", -1))) {
             String sl = pr.getString("slug");
             if (solved.contains(sl) || !probs.containsKey(sl) || pending.size() >= 5) continue;
-            Map<String, Object> m = summary(probs.get(sl));
+            Map<String, Object> m = summaryWithCompanies(probs.get(sl));
             m.put("reason", attempted.contains(sl) ? "Attempted · " + Optional.ofNullable(pr.getString("last_status")).orElse("not accepted") : "Opened, not solved yet");
             m.put("last_opened", pr.get("last_opened"));
             pending.add(m);
@@ -212,13 +237,108 @@ public class ApiController {
                 .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
                 .map(d -> Map.entry(d, d.getList("tags", String.class).stream().mapToInt(t -> topTags.contains(t) ? score.get(t) : 0).sum()))
                 .filter(e -> e.getValue() > 0).sorted((a, b) -> b.getValue() - a.getValue()).limit(6)
-                .map(e -> { Map<String, Object> m = summary(e.getKey());
+                .map(e -> { Map<String, Object> m = summaryWithCompanies(e.getKey());
                     m.put("reason", e.getKey().getList("tags", String.class).stream().filter(topTags::contains).findFirst().orElse(""));
                     return m; }).toList();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("pending", pending);
         out.put("recommended", rec);
         out.put("topTags", topTags);
+        return out;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ COMPANIES ENDPOINTS — Read from ProblemMeta
+    // ═══════════════════════════════════════════════════════════════
+    @GetMapping("/companies")
+    public List<Map<String, Object>> companies(@RequestHeader(value = "Authorization", required = false) String h) {
+        Document u = auth.optional(h);
+        Set<String> solved = new HashSet<>();
+        if (u != null) {
+            for (Document s : mongo.getCollection("submissions").find(eq("user_id", u.getString("user_id")))) {
+                if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
+            }
+        }
+
+        // Aggregate companies from ProblemMeta
+        Map<String, int[]> agg = new TreeMap<>();
+        for (ProblemMeta meta : metaRepo.findAll()) {
+            if (meta.getCompanies() == null || meta.getCompanies().isEmpty()) continue;
+            String slug = meta.getSlug();
+            for (String c : meta.getCompanies()) {
+                int[] a = agg.computeIfAbsent(c, k -> new int[2]);
+                a[0]++;
+                if (solved.contains(slug)) a[1]++;
+            }
+        }
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        agg.forEach((c, a) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", c);
+            m.put("count", a[0]);
+            m.put("solved", a[1]);
+            out.add(m);
+        });
+        out.sort((x, y) -> (int) y.get("count") - (int) x.get("count"));
+        return out;
+    }
+
+    @GetMapping("/companies/{name}")
+    public Map<String, Object> company(@PathVariable String name,
+                                       @RequestHeader(value = "Authorization", required = false) String h) {
+        Document u = auth.optional(h);
+        Map<String, String> statusMap = new HashMap<>();
+        if (u != null) {
+            for (Document s : mongo.getCollection("submissions").find(eq("user_id", u.getString("user_id")))) {
+                String sl = s.getString("slug");
+                if ("Accepted".equals(s.getString("status"))) statusMap.put(sl, "solved");
+                else statusMap.putIfAbsent(sl, "attempted");
+            }
+        }
+
+        // Find all ProblemMeta with this company
+        List<ProblemMeta> metas = new ArrayList<>();
+        for (ProblemMeta meta : metaRepo.findAll()) {
+            if (meta.getCompanies() != null && meta.getCompanies().contains(name)) {
+                metas.add(meta);
+            }
+        }
+
+        if (metas.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found");
+        }
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        Map<String, int[]> byDiff = new LinkedHashMap<>(Map.of("Easy", new int[2], "Medium", new int[2], "Hard", new int[2]));
+
+        for (ProblemMeta meta : metas) {
+            Document p = mongo.getCollection("problems").find(eq("slug", meta.getSlug())).first();
+            if (p == null) continue;
+
+            Map<String, Object> m = summary(p);
+            m.put("companies", meta.getCompanies());
+            String s = statusMap.getOrDefault(p.getString("slug"), "todo");
+            m.put("status", s);
+            list.add(m);
+
+            String diff = p.getString("difficulty");
+            int[] a = byDiff.get(diff);
+            if (a != null) {
+                a[0]++;
+                if ("solved".equals(s)) a[1]++;
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("name", name);
+        out.put("problems", list);
+        out.put("total", list.size());
+        out.put("solved", list.stream().filter(m -> "solved".equals(m.get("status"))).count());
+
+        Map<String, Object> d = new LinkedHashMap<>();
+        byDiff.forEach((k, a) -> d.put(k, Map.of("total", a[0], "solved", a[1])));
+        out.put("byDifficulty", d);
         return out;
     }
 

@@ -41,6 +41,7 @@ public class LeetCodeAdminService {
     private final ProblemRepository     problemRepo;
     private final ProblemMetaRepository metaRepo;
     private final ResourceLoader        resourceLoader;
+    private final CompanyImportService  companyImportService;   // ★ NEW
 
     private volatile String sessionCookie = "";
     private final AtomicBoolean fetchingAll = new AtomicBoolean(false);
@@ -106,8 +107,21 @@ public class LeetCodeAdminService {
                 }
 
                 Problem problem  = toProblem(num, d);
-                problem.setAcceptance(info.acceptance);   // ← set acceptance
+                problem.setAcceptance(info.acceptance);
                 ProblemMeta meta = toMeta(num, d);
+
+                // ★ AUTO-DETECT COMPANIES
+                try {
+                    List<String> companies = companyImportService.findCompaniesForProblem(slug);
+                    if (!companies.isEmpty()) {
+                        meta.setCompanies(companies);
+                        log.info("✓ Auto-detected {} companies for #{}: {}", companies.size(), num, companies);
+                    } else {
+                        log.info("No companies found for #{} ({})", num, slug);
+                    }
+                } catch (Exception e) {
+                    log.warn("Company auto-detect failed for #{}: {}", num, e.getMessage());
+                }
 
                 problemRepo.save(problem);
                 metaRepo.save(meta);
@@ -117,10 +131,10 @@ public class LeetCodeAdminService {
                 metaJson.set(String.valueOf(num), metaToJson(meta));
 
                 added.add(num);
-                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}, acceptance={}%)",
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}, acceptance={}%, companies={})",
                         num, problem.getTitle(), problem.getFn(),
                         problem.getParams().size(), problem.getSampleTests().size(),
-                        problem.getAcceptance());
+                        problem.getAcceptance(), meta.getCompanies());
 
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
@@ -174,8 +188,18 @@ public class LeetCodeAdminService {
                     if (d == null || d.isMissingNode() || d.isNull()) continue;
 
                     Problem problem  = toProblem(num, d);
-                    problem.setAcceptance(acceptance);   // ← set acceptance
+                    problem.setAcceptance(acceptance);
                     ProblemMeta meta = toMeta(num, d);
+
+                    // ★ Auto-detect companies during bulk fetch too
+                    try {
+                        List<String> companies = companyImportService.findCompaniesForProblem(slug);
+                        if (!companies.isEmpty()) {
+                            meta.setCompanies(companies);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Company detect failed for {}: {}", slug, e.getMessage());
+                    }
 
                     problemRepo.save(problem);
                     metaRepo.save(meta);
@@ -185,8 +209,9 @@ public class LeetCodeAdminService {
                     metaJson.set(String.valueOf(num), metaToJson(meta));
 
                     count++;
-                    log.info("✓ [{}] {} {} (samples: {}, acc: {}%)",
-                            count, num, slug, problem.getSampleTests().size(), acceptance);
+                    log.info("✓ [{}] {} {} (samples: {}, acc: {}%, companies: {})",
+                            count, num, slug, problem.getSampleTests().size(),
+                            acceptance, meta.getCompanies().size());
                     Thread.sleep(250);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -204,7 +229,7 @@ public class LeetCodeAdminService {
             fetchingAll.set(false);
         }
     }
-    // ★★★ FIXED: companyTags HATA DIYA — public API par 403 deta hai ★★★
+
     private JsonNode fetchQuestionDetail(String slug) throws Exception {
         JsonNode root = graphql("""
     query($s:String!){question(titleSlug:$s){
@@ -217,7 +242,6 @@ public class LeetCodeAdminService {
         return root.path("data").path("question");
     }
 
-    // Cache ab full map rakhega: id -> {slug, acceptance}
     private volatile Map<Integer, SlugInfo> slugCache = null;
     private final Object cacheLock = new Object();
 
@@ -231,13 +255,11 @@ public class LeetCodeAdminService {
     }
 
     private SlugInfo slugForNumber(int num) throws Exception {
-        // 1. Check cache
         Map<Integer, SlugInfo> cache = slugCache;
         if (cache != null && cache.containsKey(num)) {
             return cache.get(num);
         }
 
-        // 2. Try search — NOTE: field is "acRate" and "questionFrontendId" in search results
         try {
             JsonNode r = graphql("""
             query($f:QuestionListFilterInput){problemsetQuestionList:questionList(
@@ -253,7 +275,7 @@ public class LeetCodeAdminService {
                     if (idStr.equals(String.valueOf(num))) {
                         return new SlugInfo(
                                 q.path("titleSlug").asText(),
-                                q.path("acRate").asDouble(0.0)   // ← acRate, not acceptanceRate
+                                q.path("acRate").asDouble(0.0)
                         );
                     }
                 }
@@ -262,7 +284,6 @@ public class LeetCodeAdminService {
             log.warn("Search failed for #{}: {}", num, e.getMessage());
         }
 
-        // 3. Build full cache (list query has "acceptanceRate")
         synchronized (cacheLock) {
             if (slugCache == null || slugCache.isEmpty()) {
                 slugCache = buildSlugCache();
@@ -305,6 +326,7 @@ public class LeetCodeAdminService {
         log.info("Built slug cache with {} problems", map.size());
         return map;
     }
+
     private JsonNode graphql(String query, String vars) throws Exception {
         ObjectNode body = MAPPER.createObjectNode();
         body.put("query", query);
@@ -340,7 +362,6 @@ public class LeetCodeAdminService {
         String ret = "";
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
 
-        // ═══════════ STEP 1: Parse signature from codeSnippets ═══════════
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
             JsonNode jsSnippet = null;
@@ -380,14 +401,12 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 2: Parse sampleTests from exampleTestcases + description ═══════════
         String description = d.path("content").asText("");
 
-        // 2a. Extract expected outputs from description HTML
         List<String> expectedOutputs = new ArrayList<>();
         if (!description.isEmpty()) {
             String text = description
-                    .replaceAll("<[^>]*>", " ")          // strip all HTML tags
+                    .replaceAll("<[^>]*>", " ")
                     .replace("&quot;", "\"")
                     .replace("&lt;", "<")
                     .replace("&gt;", ">")
@@ -397,7 +416,6 @@ public class LeetCodeAdminService {
                     .replaceAll("\\s+", " ")
                     .trim();
 
-            // Match: "Output: X" followed by "Explanation:" or next Example
             Pattern outputPattern = Pattern.compile(
                     "Output:\\s*(.+?)(?=Explanation:|Example\\s+\\d|Constraints:|$)",
                     Pattern.DOTALL
@@ -409,16 +427,12 @@ public class LeetCodeAdminService {
             }
         }
 
-        // 2b. Extract inputs from exampleTestcases
         String exampleTestcases = d.path("exampleTestcases").asText("");
         if (!exampleTestcases.isEmpty()) {
-            // Split by lines. Each "test case" consists of N params (each param = 1 line)
             String[] lines = exampleTestcases.split("\n");
             int numParams = params.size();
 
             if (numParams > 0) {
-                // Group lines into test cases (numParams lines per test)
-                int tcIdx = 0;
                 int outIdx = 0;
                 for (int i = 0; i + numParams - 1 < lines.length; i += numParams) {
                     StringBuilder input = new StringBuilder();
@@ -436,14 +450,12 @@ public class LeetCodeAdminService {
                             .expected(expected)
                             .build());
 
-                    tcIdx++;
                     outIdx++;
                 }
                 log.debug("Parsed {} sample tests for #{}", sampleTests.size(), num);
             }
         }
 
-        // 2c. Fallback — use sampleTestCase if exampleTestcases empty
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -463,7 +475,6 @@ public class LeetCodeAdminService {
             }
         }
 
-        // ═══════════ STEP 3: Final defaults ═══════════
         if (fn.isEmpty()) fn = d.path("titleSlug").asText("").replace("-", "_");
         if (ret.isEmpty()) ret = "any";
 
@@ -528,7 +539,6 @@ public class LeetCodeAdminService {
         }
     }
 
-    // ★★★ FIXED: companyTags HATA DIYA — ab public API se response aayega ★★★
     private ProblemMeta toMeta(int num, JsonNode d) {
         List<String> hints = new ArrayList<>();
         if (d.path("hints").isArray())
@@ -536,7 +546,7 @@ public class LeetCodeAdminService {
 
         return ProblemMeta.builder()
                 .id(num)
-                .slug(d.path("titleSlug").asText())        // ★ ADD THIS LINE
+                .slug(d.path("titleSlug").asText())
                 .companies(new ArrayList<>())
                 .hints(hints)
                 .edgeCases(new ArrayList<>())
@@ -659,7 +669,7 @@ public class LeetCodeAdminService {
 
         return ProblemMeta.builder()
                 .id(id)
-                .slug(j.path("slug").asText(""))        // ★ ADD THIS LINE
+                .slug(j.path("slug").asText(""))
                 .hints(hints).companies(companies).edgeCases(edges)
                 .explanation(j.path("explanation").asText("")).build();
     }

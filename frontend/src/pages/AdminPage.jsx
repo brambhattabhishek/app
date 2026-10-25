@@ -16,7 +16,9 @@ const Stat = ({ icon: Icon, label, value, id }) => (
     </div>
 );
 
-// ── 1. Add Problems Panel ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  1. Add Problems Panel (with auto-company detection on backend)
+// ═══════════════════════════════════════════════════════════════
 const AddProblemsPanel = ({ onAdded }) => {
     const queryClient = useQueryClient();
     const [numbers, setNumbers] = useState("");
@@ -33,6 +35,7 @@ const AddProblemsPanel = ({ onAdded }) => {
             setResult({ ok: true, added: data?.added ?? [] });
             setNumbers("");
 
+            // ★ Invalidate all caches — companies auto-detect backend mein hota hai
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
@@ -48,7 +51,7 @@ const AddProblemsPanel = ({ onAdded }) => {
     return (
         <section className="rounded-xl border border-primary/20 bg-card p-4 shadow-sm" data-testid="admin-add-problems">
             <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">
-                Add LeetCode Problems (Admin Only)
+                Add LeetCode Problems (Auto-detects companies)
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -68,15 +71,25 @@ const AddProblemsPanel = ({ onAdded }) => {
                     {busy ? "Adding…" : "Add Problems"}
                 </button>
             </div>
+            {busy && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                    Fetching from LeetCode + detecting companies… (8-15 sec)
+                </p>
+            )}
             {result?.ok && (
-                <p className="mt-2 text-xs text-green-500">Added {result.added.length} problem(s): {result.added.join(", ")}</p>
+                <p className="mt-2 text-xs text-green-500">
+                    Added {result.added.length} problem(s): {result.added.join(", ")}
+                    {" "}(companies auto-detected)
+                </p>
             )}
             {result && !result.ok && <p className="mt-2 text-xs text-red-500">{result.error}</p>}
         </section>
     );
 };
 
-// ── 2. Company Import Panel ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  2. Company Import Panel (bulk import — fills companies for all problems)
+// ═══════════════════════════════════════════════════════════════
 const CompanyImportPanel = () => {
     const queryClient = useQueryClient();
     const [companies, setCompanies] = useState("Accenture, Amazon, Google, Microsoft, Meta");
@@ -91,8 +104,11 @@ const CompanyImportPanel = () => {
         try {
             const { data } = await api.post("/admin/leetcode/import-companies", { companies: list });
             setResult({ ok: true, summary: data.result?._summary });
+
+            // ★ Invalidate ALL affected caches
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
         } catch (e) {
             setResult({ ok: false, error: errMsg(e) });
         } finally {
@@ -103,7 +119,7 @@ const CompanyImportPanel = () => {
     return (
         <section className="rounded-xl border bg-card p-4" data-testid="admin-company-import">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Import Companies from GitHub
+                Bulk Import Companies from GitHub
             </p>
             <textarea
                 value={companies}
@@ -120,6 +136,11 @@ const CompanyImportPanel = () => {
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
                 {busy ? "Importing…" : "Import Companies"}
             </button>
+            {busy && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                    Fetching CSVs from GitHub… (~5 sec per company)
+                </p>
+            )}
             {result?.ok && result.summary && (
                 <p className="mt-2 text-xs text-green-500">
                     Imported {result.summary.totalCompanies} companies, updated {result.summary.totalProblemsUpdated} problems
@@ -130,7 +151,9 @@ const CompanyImportPanel = () => {
     );
 };
 
-// ── 3. System Tools Panel ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  3. System Tools Panel
+// ═══════════════════════════════════════════════════════════════
 const SystemToolsPanel = ({ onMigrated }) => {
     const queryClient = useQueryClient();
     const [busy, setBusy] = useState(false);
@@ -142,9 +165,12 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             const { data } = await api.post("/admin/leetcode/migrate-json");
             setMsg({ ok: true, text: `Migrated ${data.migrated} problems to DB.` });
+
+            // ★ Invalidate all caches
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+
             onMigrated?.();
         } catch (e) {
             setMsg({ ok: false, text: errMsg(e) });
@@ -157,6 +183,7 @@ const SystemToolsPanel = ({ onMigrated }) => {
         try {
             await api.post("/admin/leetcode/fetch-all", {});
             setMsg({ ok: true, text: "Background sync started. Check logs." });
+
             queryClient.invalidateQueries({ queryKey: ["problems"] });
             queryClient.invalidateQueries({ queryKey: ["companies"] });
             queryClient.invalidateQueries({ queryKey: ["recommendations"] });
@@ -184,7 +211,9 @@ const SystemToolsPanel = ({ onMigrated }) => {
     );
 };
 
-// ── 4. User Role Action ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  4. User Role Action
+// ═══════════════════════════════════════════════════════════════
 const UserRoleAction = ({ user, onAction }) => {
     const [busy, setBusy] = useState(false);
 
@@ -214,7 +243,9 @@ const UserRoleAction = ({ user, onAction }) => {
     );
 };
 
-// ── Main Admin Page ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  Main Admin Page
+// ═══════════════════════════════════════════════════════════════
 export default function AdminPage() {
     const { user } = useAuth();
 
@@ -256,7 +287,7 @@ export default function AdminPage() {
                 </div>
             </div>
 
-            {/* ★ Action Panels — 3 columns now, CompanyImportPanel visible */}
+            {/* ★ Action Panels — 3 columns */}
             <div className="grid lg:grid-cols-3 gap-4">
                 <AddProblemsPanel onAdded={loadOverview} />
                 <CompanyImportPanel />
