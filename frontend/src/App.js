@@ -1,4 +1,3 @@
-
 import "@/App.css";
 import { useEffect, useState } from "react";
 import {
@@ -9,6 +8,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
@@ -27,6 +27,19 @@ import {
   subscribeToApiLoading,
 } from "@/lib/api";
 import { initAnalytics, track } from "@/lib/analytics";
+
+// ★ TANSTACK QUERY CLIENT — App ke bahar define karein taaki re-render par reset na ho
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,      // 5 min tak data fresh (cache hit)
+      gcTime: 15 * 60 * 1000,         // 15 min tak cache memory mein (v5: cacheTime → gcTime)
+      refetchOnWindowFocus: false,    // Tab switch par re-fetch nahi
+      refetchOnMount: false,           // Component mount par re-fetch nahi (cache se data aaye)
+      retry: 1,                        // Fail hone par 1 retry
+    },
+  },
+});
 
 function PageTracker() {
   const { pathname } = useLocation();
@@ -76,7 +89,6 @@ function GlobalLoadingOverlay() {
       hideWhenIdle();
     }
 
-    // Prevent the loading screen from blocking the site indefinitely.
     maxTimer = setTimeout(() => {
       if (!finished) {
         finished = true;
@@ -128,14 +140,16 @@ export default function App() {
           defaultTheme="dark"
           enableSystem={false}
       >
-        <AuthProvider>
-          <BrowserRouter>
-            <AppRouter />
-            <GlobalLoadingOverlay />
-          </BrowserRouter>
+        <QueryClientProvider client={queryClient}>   {/* ★ Wrap */}
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRouter />
+              <GlobalLoadingOverlay />
+            </BrowserRouter>
 
-          <Toaster position="top-center" richColors />
-        </AuthProvider>
+            <Toaster position="top-center" richColors />
+          </AuthProvider>
+        </QueryClientProvider>
       </ThemeProvider>
   );
 }
