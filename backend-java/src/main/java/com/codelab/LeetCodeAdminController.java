@@ -14,7 +14,7 @@ import java.util.Map;
 public class LeetCodeAdminController {
 
     private final LeetCodeAdminService service;
-    private  final CompanyImportService companyImportService;
+    private final CompanyImportService companyImportService;
 
     /** Body: { "numbers": "1 3 5" } or "1,3,5". Returns { success, added: [...] } */
     @PostMapping("/add")
@@ -58,7 +58,7 @@ public class LeetCodeAdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> importCompanies(@RequestBody Map<String, List<String>> body) {
         try {
-            List<String> companies = body.getOrDefault("companies", List.of());
+            List<String> companies = body == null ? List.of() : body.getOrDefault("companies", List.of());
             if (companies.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Map.of("success", false, "error", "Provide 'companies' array"));
@@ -95,6 +95,61 @@ public class LeetCodeAdminController {
         try {
             int n = service.migrateJsonToMongo();
             return ResponseEntity.ok(Map.of("migrated", n));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("success", false, "error", e.getMessage()));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ NEW — Refresh companies for one or more problems
+    //  Body: { "slugs": ["two-sum", "triangle"] }  OR  { "numbers": "1 120" }
+    //  Scans ALL 300+ company CSVs, replaces meta.companies.
+    // ═══════════════════════════════════════════════════════════════
+    @PostMapping("/refresh-companies")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> refreshCompanies(@RequestBody Map<String, Object> body) {
+        try {
+            List<String> slugs;
+
+            if (body != null && body.get("slugs") instanceof List<?> list) {
+                slugs = list.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(Object::toString)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+            } else if (body != null && body.get("numbers") != null) {
+                slugs = service.resolveSlugsForNumbers(body.get("numbers").toString());
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "error", "Provide 'slugs' array or 'numbers' string"));
+            }
+
+            if (slugs.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "error", "No valid slugs to refresh"));
+            }
+
+            Map<String, Object> result = service.refreshCompaniesForSlugs(slugs);
+            return ResponseEntity.ok(Map.of("success", true, "result", result));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("success", false, "error", e.getMessage()));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ NEW — Refresh companies for ALL problems in DB
+    //  Runs synchronously — can take 10-30 min for 3000 problems.
+    //  Returns when complete (or times out via gateway).
+    // ═══════════════════════════════════════════════════════════════
+    @PostMapping("/refresh-companies-all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> refreshCompaniesAll() {
+        try {
+            Map<String, Object> result = service.refreshCompaniesForAll();
+            return ResponseEntity.ok(Map.of("success", true, "result", result));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(Map.of("success", false, "error", e.getMessage()));

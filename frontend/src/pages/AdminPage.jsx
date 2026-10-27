@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,6 +15,8 @@ import {
     Trash2,
     AlertCircle,
     Shield,
+    Building,
+    CheckCircle2,
 } from "lucide-react";
 import { api, errMsg, timeAgo } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -119,7 +121,7 @@ const AddProblemsPanel = ({ onAdded }) => {
             <div className="mt-2 text-xs min-h-[20px] break-words">
                 {busy && (
                     <p className="text-muted-foreground">
-                        8-15 sec per problem…
+                        30-60 sec per problem (scanning all company CSVs)…
                     </p>
                 )}
                 {result?.ok && (
@@ -154,7 +156,6 @@ const DeleteProblemsPanel = ({ onDeleted }) => {
     const [result, setResult] = useState(null);
     const [confirm, setConfirm] = useState(false);
 
-    // Reset confirm when input changes (safety)
     const onChange = (e) => {
         setItems(e.target.value);
         if (confirm) setConfirm(false);
@@ -376,6 +377,249 @@ const CompanyImportPanel = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════
+//  ★ NEW PANEL — Refresh Companies (single problem)
+//  Body: { "numbers": "1 3 5" } or { "slugs": ["two-sum"] }
+// ═══════════════════════════════════════════════════════════════
+const RefreshSinglePanel = ({ onDone }) => {
+    const queryClient = useQueryClient();
+    const [input, setInput] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+    const [elapsed, setElapsed] = useState(0);
+    const timerRef = useRef(null);
+
+    // Live elapsed timer while busy
+    useEffect(() => {
+        if (!busy) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setElapsed(0);
+            return;
+        }
+        const start = Date.now();
+        timerRef.current = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - start) / 1000));
+        }, 500);
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [busy]);
+
+    const submit = async () => {
+        const trimmed = input.trim();
+        if (!trimmed || busy) return;
+
+        // Detect: numbers-only vs slugs
+        const tokens = trimmed.split(/[,\s]+/).filter(Boolean);
+        const allNumbers = tokens.every((t) => /^\d+$/.test(t));
+
+        const body = allNumbers
+            ? { numbers: trimmed }
+            : { slugs: tokens };
+
+        setBusy(true);
+        setResult(null);
+        try {
+            const { data } = await api.post(
+                "/admin/leetcode/refresh-companies",
+                body
+            );
+            setResult({ ok: true, result: data?.result || {} });
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+            onDone?.();
+        } catch (e) {
+            setResult({ ok: false, error: errMsg(e) });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const summary = result?.ok ? result.result?._summary : null;
+
+    return (
+        <section
+            className="rounded-xl border border-blue-500/30 bg-card p-3 sm:p-4 shadow-sm flex flex-col h-full"
+            data-testid="admin-refresh-single"
+        >
+            <PanelHeader
+                icon={Building}
+                title="Refresh Companies (Single)"
+                accent="text-blue-500"
+            />
+
+            <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
+                    placeholder="1 3 or two-sum"
+                    className="flex-1 min-w-0 h-10 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                    disabled={busy}
+                    aria-label="Problem numbers or slugs to refresh"
+                />
+                <button
+                    onClick={submit}
+                    disabled={busy || !input.trim()}
+                    className="h-10 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-500 text-white px-4 text-sm font-medium disabled:opacity-50 hover:bg-blue-600 transition-colors"
+                >
+                    {busy ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                        <RefreshCw className="w-4 h-4" />
+                    )}
+                    <span>{busy ? "Refreshing…" : "Refresh"}</span>
+                </button>
+            </div>
+
+            <div className="mt-2 text-xs min-h-[20px] break-words">
+                {busy && (
+                    <p className="text-muted-foreground">
+                        Scanning 300+ company CSVs… ({elapsed}s)
+                    </p>
+                )}
+                {!busy && summary && (
+                    <p
+                        className={
+                            summary.errors?.length > 0
+                                ? "text-yellow-500"
+                                : "text-green-500"
+                        }
+                    >
+                        Updated {summary.updated} / {summary.requested}
+                        {summary.errors?.length > 0 &&
+                            ` · ${summary.errors.length} errors`}
+                    </p>
+                )}
+                {!busy && result && !result.ok && (
+                    <p className="text-red-500">{result.error}</p>
+                )}
+            </div>
+        </section>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  ★ NEW PANEL — Refresh Companies (ALL problems)
+//  Calls /refresh-companies-all — takes 3-15 min for 3000 problems
+// ═══════════════════════════════════════════════════════════════
+const RefreshAllPanel = ({ onDone }) => {
+    const queryClient = useQueryClient();
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+    const [elapsed, setElapsed] = useState(0);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        if (!busy) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setElapsed(0);
+            return;
+        }
+        const start = Date.now();
+        timerRef.current = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - start) / 1000));
+        }, 500);
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [busy]);
+
+    const submit = async () => {
+        if (busy) return;
+        if (
+            !window.confirm(
+                "Refresh companies for ALL problems? This can take 5-15 minutes.\n\nNote: request may time out on Render (30s limit) — use Render logs to verify completion."
+            )
+        )
+            return;
+
+        setBusy(true);
+        setResult(null);
+        try {
+            const { data } = await api.post(
+                "/admin/leetcode/refresh-companies-all",
+                {},
+                { timeout: 30 * 60 * 1000 } // 30 min timeout for this call
+            );
+            setResult({ ok: true, result: data?.result || {} });
+            queryClient.invalidateQueries({ queryKey: ["problems"] });
+            queryClient.invalidateQueries({ queryKey: ["companies"] });
+            queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+            onDone?.();
+        } catch (e) {
+            // Timeouts are common for this — show helpful message
+            if (e?.code === "ECONNABORTED") {
+                setResult({
+                    ok: false,
+                    error:
+                        "Request timed out (backend still processing). Check Render logs for completion. Refresh page in 5-10 min.",
+                });
+            } else {
+                setResult({ ok: false, error: errMsg(e) });
+            }
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const summary = result?.ok ? result.result?._summary : null;
+
+    return (
+        <section
+            className="rounded-xl border border-purple-500/30 bg-card p-3 sm:p-4 shadow-sm flex flex-col h-full"
+            data-testid="admin-refresh-all"
+        >
+            <PanelHeader
+                icon={RefreshCw}
+                title="Refresh Companies (All)"
+                accent="text-purple-500"
+            />
+
+            <button
+                onClick={submit}
+                disabled={busy}
+                className="h-10 w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-purple-500 text-white px-4 text-sm font-medium disabled:opacity-50 hover:bg-purple-600 transition-colors"
+            >
+                {busy ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                    <RefreshCw className="w-4 h-4" />
+                )}
+                <span>{busy ? "Refreshing…" : "Refresh All Problems"}</span>
+            </button>
+
+            <div className="mt-2 text-xs min-h-[20px] break-words">
+                {busy && (
+                    <div className="text-muted-foreground">
+                        <p>Scanning companies for ALL problems…</p>
+                        <p className="text-purple-400 font-semibold mt-0.5">
+                            {elapsed}s elapsed · check Render logs
+                        </p>
+                    </div>
+                )}
+                {!busy && summary && (
+                    <div className="text-green-500">
+                        <p className="flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Updated {summary.updated} / {summary.requested}
+                        </p>
+                        {summary.errors?.length > 0 && (
+                            <p className="text-yellow-500 mt-0.5">
+                                {summary.errors.length} errors
+                            </p>
+                        )}
+                    </div>
+                )}
+                {!busy && result && !result.ok && (
+                    <p className="text-red-500">{result.error}</p>
+                )}
+            </div>
+        </section>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════
 //  4. System Tools Panel
 // ═══════════════════════════════════════════════════════════════
 const SystemToolsPanel = ({ onMigrated }) => {
@@ -543,7 +787,6 @@ const UserRoleAction = ({ user, onAction, isSelf }) => {
 export default function AdminPage() {
     const { user } = useAuth();
 
-    // Auth-first guards — run before any query
     if (user === null) {
         return (
             <div className="p-6 sm:p-10 text-muted-foreground text-sm text-center">
@@ -616,7 +859,6 @@ function AdminContent({ currentUser }) {
         );
     }
 
-    // Normalize possibly-null arrays
     const users = Array.isArray(d.users) ? d.users : [];
     const notifications = Array.isArray(d.notifications) ? d.notifications : [];
     const events = Array.isArray(d.events) ? d.events : [];
@@ -647,11 +889,13 @@ function AdminContent({ currentUser }) {
                 </button>
             </div>
 
-            {/* Action Panels */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            {/* Action Panels — now 6 panels (3 rows of 2 on sm, 3x2 on xl) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
                 <AddProblemsPanel onAdded={loadOverview} />
                 <DeleteProblemsPanel onDeleted={loadOverview} />
                 <CompanyImportPanel />
+                <RefreshSinglePanel onDone={loadOverview} />
+                <RefreshAllPanel onDone={loadOverview} />
                 <SystemToolsPanel onMigrated={loadOverview} />
             </div>
 
