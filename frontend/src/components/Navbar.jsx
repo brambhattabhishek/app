@@ -3,6 +3,7 @@ import { useTheme } from "next-themes";
 import { Moon, Sun, Code2, LogOut, User, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { BACKEND_URL } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,25 +14,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 // ═══════════════════════════════════════════════════════════════
-//  Backend URL resolution — Vite + CRA compatible
-// ═══════════════════════════════════════════════════════════════
-const BACKEND_URL =
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
-    (typeof process !== "undefined" &&
-        process.env?.REACT_APP_BACKEND_URL) ||
-    "";
-
-// ═══════════════════════════════════════════════════════════════
 //  picUrl — resolve server-relative picture paths to absolute URLs
+//
+//  Uses the single source of truth (BACKEND_URL) exported from
+//  lib/api.js — do NOT re-resolve env vars here, that led to two
+//  places going out of sync when REACT_APP_BACKEND_URL was fixed.
 //
 //   • "/api/avatars/xyz"  → `${BACKEND_URL}/api/avatars/xyz`
 //   • "https://..."        → unchanged
-//   • null / undefined     → undefined (Avatar falls back to initials)
+//   • null / undefined     → unchanged (Avatar falls back to initials)
 // ═══════════════════════════════════════════════════════════════
 export const picUrl = (pic) => {
   if (typeof pic !== "string" || !pic) return pic;
   if (pic.startsWith("/api/")) {
-    return `${BACKEND_URL}${pic}`;
+    // BACKEND_URL is already cleaned (no trailing slash)
+    return `${BACKEND_URL || ""}${pic}`;
   }
   return pic;
 };
@@ -42,8 +39,10 @@ export const picUrl = (pic) => {
 export function Avatar({ user, size = 32 }) {
   const [imgError, setImgError] = useState(false);
 
-  // Try picture, but fall back gracefully on 404 / broken URL
-  const src = !imgError ? picUrl(user?.picture) : null;
+  // Reset error when the picture changes (e.g., user uploads a new avatar)
+  // (React 18 patterns — use the picture value as a key trigger)
+  const pic = user?.picture;
+  const src = !imgError && pic ? picUrl(pic) : null;
 
   if (src) {
     return (
@@ -58,7 +57,10 @@ export function Avatar({ user, size = 32 }) {
     );
   }
 
-  const initial = (user?.name || user?.email || "?").slice(0, 1).toUpperCase();
+  const initial = (user?.name || user?.email || "?")
+      .slice(0, 1)
+      .toUpperCase();
+
   return (
       <div
           style={{ width: size, height: size }}
@@ -71,7 +73,7 @@ export function Avatar({ user, size = 32 }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Link class helper
+//  NavLink class helper
 // ═══════════════════════════════════════════════════════════════
 const linkCls = ({ isActive }) =>
     `text-sm font-medium px-3 py-1.5 rounded-md transition-colors ${
@@ -90,14 +92,18 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isAuthed = !!user && user !== false;
-  const isGuest = user === false;
-  const isAdmin = isAuthed && (user.is_admin || user.isAdmin || user.role === "ADMIN");
+  const isGuest = user === false; // ← NOT `user === null` (that's "checking")
+  const isAdmin =
+      isAuthed &&
+      (user.is_admin || user.isAdmin || user.role === "ADMIN");
 
   const handleLogout = () => {
     logout();
     setMobileOpen(false);
     navigate("/");
   };
+
+  const closeMobile = () => setMobileOpen(false);
 
   return (
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-xl">
@@ -107,7 +113,7 @@ export default function Navbar() {
               to="/"
               className="flex items-center gap-2 mr-2 shrink-0"
               data-testid="nav-logo"
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobile}
           >
                     <span className="w-7 h-7 rounded-md bg-primary grid place-items-center">
                         <Code2 className="w-4 h-4 text-primary-foreground" />
@@ -164,6 +170,7 @@ export default function Navbar() {
                 className="w-8 h-8 grid place-items-center rounded-md hover:bg-secondary transition-colors"
                 data-testid="theme-toggle-button"
                 aria-label="Toggle theme"
+                type="button"
             >
               {theme === "dark" ? (
                   <Sun className="w-4 h-4" />
@@ -177,6 +184,7 @@ export default function Navbar() {
                 <button
                     onClick={() => navigate("/login")}
                     data-testid="nav-login-button"
+                    type="button"
                     className="text-sm font-semibold px-4 py-1.5 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
                 >
                   Sign in
@@ -240,6 +248,7 @@ export default function Navbar() {
                 aria-label="Toggle menu"
                 aria-expanded={mobileOpen}
                 data-testid="nav-mobile-toggle"
+                type="button"
             >
               {mobileOpen ? (
                   <X className="w-4 h-4" />
@@ -257,7 +266,7 @@ export default function Navbar() {
                   to="/"
                   end
                   className={linkCls}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={closeMobile}
                   data-testid="nav-mobile-problems-link"
               >
                 Problems
@@ -265,7 +274,7 @@ export default function Navbar() {
               <NavLink
                   to="/companies"
                   className={linkCls}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={closeMobile}
                   data-testid="nav-mobile-companies-link"
               >
                 Companies
@@ -274,7 +283,7 @@ export default function Navbar() {
                   <NavLink
                       to="/profile"
                       className={linkCls}
-                      onClick={() => setMobileOpen(false)}
+                      onClick={closeMobile}
                       data-testid="nav-mobile-profile-link"
                   >
                     Profile
@@ -284,7 +293,7 @@ export default function Navbar() {
                   <NavLink
                       to="/admin"
                       className={linkCls}
-                      onClick={() => setMobileOpen(false)}
+                      onClick={closeMobile}
                       data-testid="nav-mobile-admin-link"
                   >
                     Admin

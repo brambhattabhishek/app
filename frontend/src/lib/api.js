@@ -1,17 +1,60 @@
 import axios from "axios";
 
 // ═══════════════════════════════════════════════════════════════
-//  Base URL — Vite + CRA compatible
+//  BACKEND URL resolution — CRA + Vite compatible
+//
+//  CRA inlines REACT_APP_* at build time → must be read as
+//  process.env.REACT_APP_BACKEND_URL (literal, not dynamic).
+//
+//  Vite exposes import.meta.env at runtime → check safely.
 // ═══════════════════════════════════════════════════════════════
-const BACKEND_URL =
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
-    (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-    (typeof process !== "undefined" && process.env?.VITE_BACKEND_URL) ||
-    "";
 
+// CRA — safe, replaces at build time. Do NOT wrap in typeof guard,
+// because CRA needs the literal `process.env.REACT_APP_BACKEND_URL`
+// token to find & replace it.
+let backendUrl = "";
+
+// Vite detection — only access import.meta.env when actually in Vite
+try {
+    // eslint-disable-next-line no-undef
+    if (typeof import.meta !== "undefined" && import.meta.env) {
+        // eslint-disable-next-line no-undef
+        backendUrl = import.meta.env.VITE_BACKEND_URL || "";
+    }
+} catch {
+    backendUrl = "";
+}
+
+// Fallback to CRA env (build-time replacement)
+if (!backendUrl) {
+    // eslint-disable-next-line no-undef
+    backendUrl = process.env.REACT_APP_BACKEND_URL || "";
+}
+
+// Final safety — if still empty, use same origin (which won't work
+// for a split deployment, but at least warns the developer)
+if (!backendUrl) {
+    // eslint-disable-next-line no-console
+    console.error(
+        "[api] BACKEND_URL is empty! " +
+        "Set REACT_APP_BACKEND_URL (CRA) or VITE_BACKEND_URL (Vite) " +
+        "and rebuild the frontend."
+    );
+}
+
+// Strip trailing slash to prevent `/api` double-slash bugs
+const CLEAN = backendUrl.replace(/\/+$/, "");
+
+export const BACKEND_URL = CLEAN;
+
+// ═══════════════════════════════════════════════════════════════
+//  Axios instance
+// ═══════════════════════════════════════════════════════════════
 export const api = axios.create({
-    baseURL: `${BACKEND_URL}/api`,
+    baseURL: `${CLEAN}/api`,
     timeout: 30000,
+    // Send cookies for same-origin avatar/auth flows
+    withCredentials: false,
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -63,7 +106,6 @@ api.interceptors.request.use(
             }
         }
 
-        // ★ Set the flag BEFORE incrementing so error handler decrements correctly
         config._loadingTracked = true;
         activeRequests++;
         notifyLoadingListeners();
@@ -84,10 +126,25 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
-        // ★ Always decrement on failures that started tracking
         if (error.config?._loadingTracked) {
             finishRequest();
         }
+
+        // Detect the "SPA fallback returned HTML instead of JSON" case
+        // so it surfaces as a helpful error, not silent breakage
+        const ct = error?.response?.headers?.["content-type"] || "";
+        if (
+            error?.response?.status === 200 &&
+            ct.includes("text/html")
+        ) {
+            console.error(
+                "[api] Backend returned HTML — this usually means " +
+                "REACT_APP_BACKEND_URL is missing from the build. " +
+                "Set it in Render env vars and REDEPLOY (env var changes " +
+                "require a rebuild for CRA)."
+            );
+        }
+
         return Promise.reject(error);
     }
 );
@@ -98,12 +155,13 @@ api.interceptors.response.use(
 export const errMsg = (e) => {
     const d = e?.response?.data;
 
+    if (typeof d === "string" && d.length < 500) return d;
     if (typeof d?.message === "string" && d.message) return d.message;
     if (typeof d?.error === "string" && d.error) return d.error;
 
-    // Fallback for network errors, timeouts
     if (e?.code === "ECONNABORTED") return "Request timed out";
-    if (e?.message === "Network Error") return "Network error — check your connection";
+    if (e?.message === "Network Error")
+        return "Network error — check your connection";
 
     return e?.message || "Something went wrong";
 };
@@ -123,10 +181,9 @@ export const langLabel = (id) =>
 
 export const timeAgo = (ts) => {
     const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-
+    if (!Number.isFinite(s) || s < 0) return "just now";
     if (s < 60) return `${s}s ago`;
     if (s < 3600) return `${Math.floor(s / 60)}m ago`;
     if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-
     return `${Math.floor(s / 86400)}d ago`;
 };
