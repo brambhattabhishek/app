@@ -117,15 +117,20 @@ public class ApiController {
     // ═══════════════════════════════════════════════════════════════
     private Map<String, Set<String>> companyToSlugs() {
         Set<String> validSlugs = new HashSet<>();
-        for (Document p : mongo.getCollection("problems").find(new Document("slug", 1))) {
-            String s = p.getString("slug");
-            if (s != null) validSlugs.add(s);
+        for (Document p : mongo.getCollection("problems").find()) {
+            Object slugObj = p.get("slug");
+            if (slugObj != null) {
+                String slug = slugObj.toString().trim();
+                if (!slug.isEmpty()) validSlugs.add(slug);
+            }
         }
 
         Map<String, Set<String>> map = new TreeMap<>();
         for (Document meta : mongo.getCollection("problem_meta").find()) {
-            String slug = meta.getString("slug");
-            if (slug == null || !validSlugs.contains(slug)) continue;
+            Object slugObj = meta.get("slug");
+            if (slugObj == null) continue;
+            String slug = slugObj.toString().trim();
+            if (slug.isEmpty() || !validSlugs.contains(slug)) continue;
 
             Object companiesObj = meta.get("companies");
             if (!(companiesObj instanceof List<?> list)) continue;
@@ -161,40 +166,45 @@ public class ApiController {
         out.put("backend", "java-spring-boot");
         out.put("timestamp", new Date().toString());
 
-        // ── DEBUG — remove after diagnosis ──
         try {
-            long problemsCount = mongo.getCollection("problems").countDocuments();
-            long metaCount = mongo.getCollection("problem_meta").countDocuments();
-            out.put("debug_problemsCount", problemsCount);
-            out.put("debug_metaCount", metaCount);
+            out.put("debug_problemsCount", mongo.getCollection("problems").countDocuments());
+            out.put("debug_metaCount", mongo.getCollection("problem_meta").countDocuments());
 
-            // Sample first meta doc
-            Document sample = mongo.getCollection("problem_meta").find().first();
-            if (sample != null) {
-                Map<String, Object> sm = new LinkedHashMap<>();
-                sm.put("_id", sample.get("_id"));
-                sm.put("slug", sample.get("slug"));
-                Object c = sample.get("companies");
-                sm.put("companies_present", c != null);
-                sm.put("companies_class", c == null ? "NULL" : c.getClass().getName());
-                sm.put("companies_isList", c instanceof List<?>);
-                if (c instanceof List<?> l) {
-                    sm.put("companies_count", l.size());
-                    sm.put("companies_sample", l.stream().limit(3).map(Object::toString).toList());
-                }
-                out.put("debug_metaSample", sm);
+            // ★ Sample first problem doc
+            Document probSample = mongo.getCollection("problems").find().first();
+            if (probSample != null) {
+                Map<String, Object> pm = new LinkedHashMap<>();
+                pm.put("_id", probSample.get("_id"));
+                Object slugRaw = probSample.get("slug");
+                pm.put("slug_raw", slugRaw);
+                pm.put("slug_class", slugRaw == null ? "NULL" : slugRaw.getClass().getName());
+                pm.put("slug_via_getString", probSample.getString("slug"));
+                pm.put("all_keys", new ArrayList<>(probSample.keySet()));
+                out.put("debug_problemSample", pm);
+            } else {
+                out.put("debug_problemSample", "NO PROBLEM DOCS FOUND");
+            }
+
+            // ★ Sample first meta doc
+            Document metaSample = mongo.getCollection("problem_meta").find().first();
+            if (metaSample != null) {
+                Map<String, Object> mm = new LinkedHashMap<>();
+                mm.put("_id", metaSample.get("_id"));
+                Object slugRaw = metaSample.get("slug");
+                mm.put("slug_raw", slugRaw);
+                mm.put("slug_class", slugRaw == null ? "NULL" : slugRaw.getClass().getName());
+                mm.put("slug_via_getString", metaSample.getString("slug"));
+                mm.put("all_keys", new ArrayList<>(metaSample.keySet()));
+                out.put("debug_metaSample", mm);
             } else {
                 out.put("debug_metaSample", "NO META DOCS FOUND");
             }
 
-            // Run companyToSlugs
             Map<String, Set<String>> c2s = companyToSlugs();
             out.put("debug_companiesMapSize", c2s.size());
             out.put("debug_companiesMapSample", c2s.entrySet().stream().limit(5)
                     .map(e -> Map.of("company", e.getKey(), "problemCount", e.getValue().size()))
                     .toList());
-
-            // Also check what auth header we're getting
             out.put("debug_validSlugs_count", mongo.getCollection("problems")
                     .find(new Document("slug", 1)).into(new ArrayList<>()).size());
 
