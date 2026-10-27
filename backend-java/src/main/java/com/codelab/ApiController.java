@@ -43,12 +43,22 @@ public class ApiController {
         return m;
     }
 
+    /**
+     * Resolve numeric problem id from a raw Mongo document.
+     * Spring Data maps @Id Integer id → _id, so `id` key is often missing.
+     */
+    static Object idOf(Document d) {
+        Object idObj = d.get("id");
+        if (idObj == null) idObj = d.get("_id");
+        return idObj;
+    }
+
     void validate(String lang, String code, Document p, List<String> inputs) {
         if (!LANGS.contains(lang)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported language");
         if (code == null || code.isBlank() || code.length() > 50_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Code is empty or too long");
         if (inputs == null || inputs.isEmpty() || inputs.size() > 30) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide 1-30 testcases");
         int k = CodeTemplates.params(p).size();
-        if (k == 0) return; // some problems may have zero params — skip line-count check
+        if (k == 0) return;
         for (String in : inputs)
             if (in == null || in.strip().split("\n").length != k || Arrays.stream(in.strip().split("\n")).anyMatch(String::isBlank))
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each testcase needs exactly " + k + " non-empty value(s)");
@@ -107,15 +117,10 @@ public class ApiController {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Document d : mongo.getCollection("problems").find().sort(new Document("_id", 1))) {
             Map<String, Object> m = new LinkedHashMap<>();
-
-            Object idObj = d.get("id");
-            if (idObj == null) idObj = d.get("_id");
-            m.put("id", idObj);
-
+            m.put("id", idOf(d));
             for (String k : List.of("slug", "title", "difficulty", "tags", "acceptance")) {
                 m.put(k, d.get(k));
             }
-
             String slug = d.getString("slug");
             m.put("companies", companiesBySlug.getOrDefault(slug, List.of()));
             m.put("status", solved.contains(slug) ? "solved" : attempted.contains(slug) ? "attempted" : "todo");
@@ -133,10 +138,7 @@ public class ApiController {
 
         Map<String, Object> m = clean(d);
         m.remove("hiddenTests");
-
-        Object idObj = d.get("id");
-        if (idObj == null) idObj = d.get("_id");
-        m.put("id", idObj);
+        m.put("id", idOf(d));
 
         var metaOpt = metaRepo.findBySlug(slug);
         if (metaOpt.isPresent()) {
@@ -166,21 +168,18 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  RUN — ★ guest allowed, null-safe reference code
-    //  Expected = editorial python code output (may be blank → cases still shown)
+    //  RUN — guest allowed, null-safe reference code
     // ═══════════════════════════════════════════════════════════════
     @PostMapping("/run")
     public Map<String, Object> run(@RequestBody RunReq r,
                                    @RequestHeader(value = "Authorization", required = false) String h) {
         Document p = problem(r.slug());
 
-        // Track progress only for logged-in users
         Document u = auth.optional(h);
         if (u != null) {
             progress(u, r.slug(), new Document("last_opened", new Date()).append("last_run", new Date()));
         }
 
-        // Resolve inputs (fallback to sample tests)
         List<String> raw;
         if (r.inputs() == null || r.inputs().isEmpty()) {
             raw = Optional.ofNullable(p.getList("sampleTests", Document.class)).orElse(List.of())
@@ -195,10 +194,7 @@ public class ApiController {
         validate(r.language(), r.code(), p, raw);
         List<String> inputs = raw.stream().map(String::strip).toList();
 
-        // ── User's execution ──
         Executor.ExecResult res = executor.run(r.language(), r.code(), p, inputs);
-
-        // ── Reference execution (editorial) — null-safe ──
         List<String> expectedOutputs = computeExpected(p, inputs);
 
         List<Map<String, Object>> cases = new ArrayList<>();
@@ -228,7 +224,7 @@ public class ApiController {
         if (!res.status().equals("OK")) {
             status = res.status();
         } else if (!allComparable) {
-            status = "Ran";           // reference unavailable → just show output
+            status = "Ran";
         } else {
             status = allPass ? "Accepted" : "Wrong Answer";
         }
@@ -241,7 +237,6 @@ public class ApiController {
         return out;
     }
 
-    /** Compute expected outputs from editorial python code — fully null-safe. */
     private List<String> computeExpected(Document p, List<String> inputs) {
         List<String> fallback = Collections.nCopies(inputs.size(), (String) null);
         try {
@@ -253,7 +248,6 @@ public class ApiController {
             Executor.ExecResult ref = executor.run("python", refCode, p, inputs);
             if (!"OK".equals(ref.status())) return fallback;
 
-            // Pad / trim to match inputs size
             List<String> outs = new ArrayList<>(ref.outputs());
             while (outs.size() < inputs.size()) outs.add(null);
             return outs;
@@ -335,9 +329,19 @@ public class ApiController {
                 new com.mongodb.client.model.UpdateOptions().upsert(true));
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ summary() — FIXED: id fallback from _id
+    //
+    //  Called by DailyController.daily() when building the daily
+    //  challenge payload. Without this, p.id was null → guest saw
+    //  ". String to Integer (atoi)" (leading dot with empty id).
+    // ═══════════════════════════════════════════════════════════════
     static Map<String, Object> summary(Document d) {
         Map<String, Object> m = new LinkedHashMap<>();
-        for (String k : List.of("id", "slug", "title", "difficulty", "tags", "acceptance")) m.put(k, d.get(k));
+        m.put("id", idOf(d));
+        for (String k : List.of("slug", "title", "difficulty", "tags", "acceptance")) {
+            m.put(k, d.get(k));
+        }
         return m;
     }
 
@@ -358,7 +362,15 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  RECOMMENDATIONS — login required
+    //  ★ RECOMMENDATIONS — FIXED: 3-tier fallback chain
+    //
+    //  Tier 1 → user has interests / history tags → recommend by tags
+    //  Tier 2 → user has attempted problems (no tags) → recommend
+    //           more of the same difficulty (higher acceptance first)
+    //  Tier 3 → brand-new user → recommend popular Easy problems
+    //
+    //  Before: with empty interests + 0 accepted submissions,
+    //  topTags was empty → rec list was empty → ForYou section hidden.
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/recommendations")
     public Map<String, Object> recommendations(@RequestHeader(value = "Authorization", required = false) String h) {
@@ -375,6 +387,7 @@ public class ApiController {
             if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
         }
 
+        // ── Pending (continue where you left off) ──
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Document pr : mongo.getCollection("progress").find(eq("user_id", uid)).sort(new Document("last_opened", -1))) {
             String sl = pr.getString("slug");
@@ -387,6 +400,7 @@ public class ApiController {
             pending.add(m);
         }
 
+        // ── Score tags from history + interests ──
         Map<String, Integer> score = new HashMap<>();
         for (String sl : attempted) {
             if (!probs.containsKey(sl)) continue;
@@ -402,27 +416,90 @@ public class ApiController {
 
         Set<String> pendingSlugs = pending.stream().map(m -> (String) m.get("slug")).collect(Collectors.toSet());
 
-        List<Map<String, Object>> rec = probs.values().stream()
-                .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
-                .map(d -> {
-                    List<String> tags = Optional.ofNullable(d.getList("tags", String.class)).orElse(List.of());
-                    int s = tags.stream().mapToInt(t -> topTags.contains(t) ? score.get(t) : 0).sum();
-                    return Map.entry(d, s);
-                })
-                .filter(e -> e.getValue() > 0)
-                .sorted((a, b) -> b.getValue() - a.getValue())
-                .limit(6)
-                .map(e -> {
-                    Map<String, Object> m = summaryWithCompanies(e.getKey());
-                    List<String> tags = Optional.ofNullable(e.getKey().getList("tags", String.class)).orElse(List.of());
-                    m.put("reason", tags.stream().filter(topTags::contains).findFirst().orElse(""));
-                    return m;
-                }).toList();
+        // ── Tier 1: tag-based ──
+        List<Map<String, Object>> rec = new ArrayList<>();
+        if (!topTags.isEmpty()) {
+            rec = probs.values().stream()
+                    .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
+                    .map(d -> {
+                        List<String> tags = Optional.ofNullable(d.getList("tags", String.class)).orElse(List.of());
+                        int s = tags.stream().mapToInt(t -> topTags.contains(t) ? score.getOrDefault(t, 0) : 0).sum();
+                        return Map.entry(d, s);
+                    })
+                    .filter(e -> e.getValue() > 0)
+                    .sorted((a, b) -> b.getValue() - a.getValue())
+                    .limit(6)
+                    .map(e -> {
+                        Map<String, Object> m = summaryWithCompanies(e.getKey());
+                        List<String> tags = Optional.ofNullable(e.getKey().getList("tags", String.class)).orElse(List.of());
+                        String match = tags.stream().filter(topTags::contains).findFirst().orElse("");
+                        m.put("reason", match.isEmpty() ? "Matches your interests" : "Matches your interest: " + match);
+                        return m;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // ── Tier 2: no tags → recommend more of the same difficulty ──
+        if (rec.isEmpty() && !attempted.isEmpty()) {
+            Map<String, Long> diffCount = attempted.stream()
+                    .filter(probs::containsKey)
+                    .map(sl -> probs.get(sl).getString("difficulty"))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.groupingBy(d -> d, Collectors.counting()));
+
+            String favDiff = diffCount.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(null);
+
+            if (favDiff != null) {
+                final String diff = favDiff;
+                rec = probs.values().stream()
+                        .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
+                        .filter(d -> diff.equals(d.getString("difficulty")))
+                        .sorted((a, b) -> {
+                            double aa = a.get("acceptance") instanceof Number ? ((Number) a.get("acceptance")).doubleValue() : 0;
+                            double bb = b.get("acceptance") instanceof Number ? ((Number) b.get("acceptance")).doubleValue() : 0;
+                            return Double.compare(bb, aa); // higher acceptance = easier = recommend first
+                        })
+                        .limit(6)
+                        .map(d -> {
+                            Map<String, Object> m = summaryWithCompanies(d);
+                            m.put("reason", "More " + diff + " problems");
+                            return m;
+                        })
+                        .collect(Collectors.toList());
+            }
+        }
+
+        // ── Tier 3: brand new user → popular Easy ──
+        if (rec.isEmpty()) {
+            rec = probs.values().stream()
+                    .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
+                    .filter(d -> "Easy".equals(d.getString("difficulty")))
+                    .sorted((a, b) -> {
+                        double aa = a.get("acceptance") instanceof Number ? ((Number) a.get("acceptance")).doubleValue() : 0;
+                        double bb = b.get("acceptance") instanceof Number ? ((Number) b.get("acceptance")).doubleValue() : 0;
+                        return Double.compare(bb, aa);
+                    })
+                    .limit(6)
+                    .map(d -> {
+                        Map<String, Object> m = summaryWithCompanies(d);
+                        m.put("reason", "Popular easy starter");
+                        return m;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        String strategy = !topTags.isEmpty() ? "by-tags"
+                : !attempted.isEmpty() ? "by-difficulty"
+                : "easy-start";
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("pending", pending);
         out.put("recommended", rec);
         out.put("topTags", topTags);
+        out.put("strategy", strategy);
         return out;
     }
 
