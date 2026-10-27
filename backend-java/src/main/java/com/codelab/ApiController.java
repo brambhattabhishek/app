@@ -43,10 +43,6 @@ public class ApiController {
         return m;
     }
 
-    /**
-     * Resolve numeric problem id from a raw Mongo document.
-     * Spring Data maps @Id Integer id → _id, so `id` key is often missing.
-     */
     static Object idOf(Document d) {
         Object idObj = d.get("id");
         if (idObj == null) idObj = d.get("_id");
@@ -65,25 +61,76 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  SINGLE SOURCE OF TRUTH — Company → unique valid slugs
+    //  ★ RAW DOC HELPERS — bypass Spring Data quirks
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Get raw problem_meta document for a slug (bypasses metaRepo). */
+    private Document metaDoc(String slug) {
+        if (slug == null) return null;
+        return mongo.getCollection("problem_meta").find(eq("slug", slug)).first();
+    }
+
+    /** Extract companies list from a raw meta document — null-safe. */
+    private static List<String> companiesOf(Document meta) {
+        if (meta == null) return List.of();
+        Object obj = meta.get("companies");
+        if (!(obj instanceof List<?> list)) return List.of();
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    /** Extract a string list from a raw meta field — null-safe. */
+    private static List<String> stringListOf(Document meta, String key) {
+        if (meta == null) return List.of();
+        Object obj = meta.get(key);
+        if (!(obj instanceof List<?> list)) return List.of();
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .toList();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ companyToSlugs() — FIXED: uses raw problem_meta docs
+    //  Reads directly from MongoTemplate → no metaRepo.findAll() issues.
     // ═══════════════════════════════════════════════════════════════
     private Map<String, Set<String>> companyToSlugs() {
+        // 1. Valid slugs from problems collection
         Set<String> validSlugs = new HashSet<>();
         for (Document p : mongo.getCollection("problems").find(new Document("slug", 1))) {
             String s = p.getString("slug");
             if (s != null) validSlugs.add(s);
         }
 
+        // 2. Iterate problem_meta raw docs
         Map<String, Set<String>> map = new TreeMap<>();
-        for (ProblemMeta meta : metaRepo.findAll()) {
-            String slug = meta.getSlug();
+        for (Document meta : mongo.getCollection("problem_meta").find()) {
+            String slug = meta.getString("slug");
             if (slug == null || !validSlugs.contains(slug)) continue;
-            if (meta.getCompanies() == null || meta.getCompanies().isEmpty()) continue;
-            for (String c : meta.getCompanies()) {
-                if (c == null || c.isBlank()) continue;
-                map.computeIfAbsent(c.trim(), k -> new HashSet<>()).add(slug);
+
+            Object companiesObj = meta.get("companies");
+            if (!(companiesObj instanceof List<?> list)) continue;
+
+            for (Object c : list) {
+                if (c == null) continue;
+                String cs = c.toString().trim();
+                if (cs.isEmpty()) continue;
+                map.computeIfAbsent(cs, k -> new HashSet<>()).add(slug);
             }
         }
+
+        // 3. Debug log — helps confirm fix on Render
+        long metaCount = mongo.getCollection("problem_meta").countDocuments();
+        System.out.println("[companyToSlugs] validSlugs=" + validSlugs.size()
+                + ", metaCount=" + metaCount
+                + ", companiesInMap=" + map.size());
+
         return map;
     }
 
@@ -129,6 +176,9 @@ public class ApiController {
         return out;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  ★ DETAIL — FIXED: raw meta read instead of metaRepo.findBySlug
+    // ═══════════════════════════════════════════════════════════════
     @GetMapping("/problems/{slug}")
     public Map<String, Object> detail(@PathVariable String slug,
                                       @RequestHeader(value = "Authorization", required = false) String h) {
@@ -140,26 +190,13 @@ public class ApiController {
         m.remove("hiddenTests");
         m.put("id", idOf(d));
 
-        var metaOpt = metaRepo.findBySlug(slug);
-        if (metaOpt.isPresent()) {
-            ProblemMeta meta = metaOpt.get();
-            m.put("hints", meta.getHints() != null ? meta.getHints() : List.of());
-            List<String> companies = meta.getCompanies() == null ? List.of() :
-                    meta.getCompanies().stream()
-                            .filter(c -> c != null && !c.isBlank())
-                            .map(String::trim)
-                            .distinct()
-                            .sorted()
-                            .toList();
-            m.put("companies", companies);
-            m.put("edgeCases", meta.getEdgeCases() != null ? meta.getEdgeCases() : List.of());
-            m.put("explanation", meta.getExplanation() != null ? meta.getExplanation() : "");
-        } else {
-            m.put("hints", List.of());
-            m.put("companies", List.of());
-            m.put("edgeCases", List.of());
-            m.put("explanation", "");
-        }
+        // ★ Read meta directly from MongoTemplate
+        Document meta = metaDoc(slug);
+        m.put("hints", stringListOf(meta, "hints"));
+        m.put("companies", companiesOf(meta));
+        m.put("edgeCases", stringListOf(meta, "edgeCases"));
+        Object exp = meta == null ? null : meta.get("explanation");
+        m.put("explanation", exp == null ? "" : exp.toString());
 
         if (m.get("constraints") == null) m.put("constraints", List.of());
 
@@ -330,11 +367,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ summary() — FIXED: id fallback from _id
-    //
-    //  Called by DailyController.daily() when building the daily
-    //  challenge payload. Without this, p.id was null → guest saw
-    //  ". String to Integer (atoi)" (leading dot with empty id).
+    //  summary() — id fallback (daily challenge fix)
     // ═══════════════════════════════════════════════════════════════
     static Map<String, Object> summary(Document d) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -345,32 +378,15 @@ public class ApiController {
         return m;
     }
 
+    // ★ FIXED: raw meta read
     Map<String, Object> summaryWithCompanies(Document d) {
         Map<String, Object> m = summary(d);
-        String slug = d.getString("slug");
-        var metaOpt = metaRepo.findBySlug(slug);
-        List<String> companies = metaOpt.map(ProblemMeta::getCompanies).orElse(List.of());
-        if (companies == null) companies = List.of();
-        companies = companies.stream()
-                .filter(c -> c != null && !c.isBlank())
-                .map(String::trim)
-                .distinct()
-                .sorted()
-                .toList();
-        m.put("companies", companies);
+        m.put("companies", companiesOf(metaDoc(d.getString("slug"))));
         return m;
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ RECOMMENDATIONS — FIXED: 3-tier fallback chain
-    //
-    //  Tier 1 → user has interests / history tags → recommend by tags
-    //  Tier 2 → user has attempted problems (no tags) → recommend
-    //           more of the same difficulty (higher acceptance first)
-    //  Tier 3 → brand-new user → recommend popular Easy problems
-    //
-    //  Before: with empty interests + 0 accepted submissions,
-    //  topTags was empty → rec list was empty → ForYou section hidden.
+    //  RECOMMENDATIONS — 3-tier fallback chain
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/recommendations")
     public Map<String, Object> recommendations(@RequestHeader(value = "Authorization", required = false) String h) {
@@ -387,7 +403,7 @@ public class ApiController {
             if ("Accepted".equals(s.getString("status"))) solved.add(s.getString("slug"));
         }
 
-        // ── Pending (continue where you left off) ──
+        // ── Pending ──
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Document pr : mongo.getCollection("progress").find(eq("user_id", uid)).sort(new Document("last_opened", -1))) {
             String sl = pr.getString("slug");
@@ -400,7 +416,7 @@ public class ApiController {
             pending.add(m);
         }
 
-        // ── Score tags from history + interests ──
+        // ── Score tags ──
         Map<String, Integer> score = new HashMap<>();
         for (String sl : attempted) {
             if (!probs.containsKey(sl)) continue;
@@ -439,7 +455,7 @@ public class ApiController {
                     .collect(Collectors.toList());
         }
 
-        // ── Tier 2: no tags → recommend more of the same difficulty ──
+        // ── Tier 2: same difficulty ──
         if (rec.isEmpty() && !attempted.isEmpty()) {
             Map<String, Long> diffCount = attempted.stream()
                     .filter(probs::containsKey)
@@ -460,7 +476,7 @@ public class ApiController {
                         .sorted((a, b) -> {
                             double aa = a.get("acceptance") instanceof Number ? ((Number) a.get("acceptance")).doubleValue() : 0;
                             double bb = b.get("acceptance") instanceof Number ? ((Number) b.get("acceptance")).doubleValue() : 0;
-                            return Double.compare(bb, aa); // higher acceptance = easier = recommend first
+                            return Double.compare(bb, aa);
                         })
                         .limit(6)
                         .map(d -> {
@@ -472,7 +488,7 @@ public class ApiController {
             }
         }
 
-        // ── Tier 3: brand new user → popular Easy ──
+        // ── Tier 3: popular Easy ──
         if (rec.isEmpty()) {
             rec = probs.values().stream()
                     .filter(d -> !solved.contains(d.getString("slug")) && !pendingSlugs.contains(d.getString("slug")))
