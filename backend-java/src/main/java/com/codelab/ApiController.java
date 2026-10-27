@@ -881,4 +881,38 @@ public class ApiController {
         out.put("recent", recent);
         return out;
     }
+
+    @GetMapping("/debug/companies")
+    public Map<String, Object> debugCompanies() {
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        out.put("timestamp", new Date().toString());
+        out.put("problemsCount", mongo.getCollection("problems").countDocuments());
+        out.put("metaCount", mongo.getCollection("problem_meta").countDocuments());
+
+        // Sample 3 meta docs
+        List<Map<String, Object>> samples = new ArrayList<>();
+        for (Document d : mongo.getCollection("problem_meta").find().limit(3)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("_id", d.get("_id"));
+            m.put("slug", d.get("slug"));
+            Object c = d.get("companies");
+            m.put("companies_type", c == null ? "NULL" : c.getClass().getSimpleName());
+            m.put("companies_count", c instanceof List<?> l ? l.size() : -1);
+            if (c instanceof List<?> l) {
+                m.put("companies_sample", l.stream().limit(3).map(Object::toString).toList());
+            }
+            samples.add(m);
+        }
+        out.put("metaSamples", samples);
+
+        // Run companyToSlugs and dump result
+        Map<String, Set<String>> map = companyToSlugs();
+        out.put("companiesMapSize", map.size());
+        out.put("companiesMapSample", map.entrySet().stream().limit(5)
+                .map(e -> Map.of("company", e.getKey(), "problemCount", e.getValue().size()))
+                .toList());
+
+        return out;
+    }
 }
