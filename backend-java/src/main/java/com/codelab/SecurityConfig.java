@@ -37,7 +37,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // ═══════════════════════════════════════════════════
-                        //  ALWAYS PUBLIC (preflight + static + SPA shell)
+                        //  ALWAYS PUBLIC — preflight + static + SPA shell
                         // ═══════════════════════════════════════════════════
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
@@ -51,28 +51,47 @@ public class SecurityConfig {
                                 "/robots.txt",
                                 "/sitemap.xml",
                                 "/Loading.gif",
-                                "/error"
+                                "/error",
+                                "/.well-known/**"
                         ).permitAll()
 
                         // ═══════════════════════════════════════════════════
                         //  GUEST-ACCESSIBLE API  (login optional)
-                        //  ─ Auth flows, browse, run code, daily pick,
-                        //    companies, avatar images, analytics events
+                        //
+                        //  These endpoints must work WITHOUT a JWT so the
+                        //  guest flow (browse + run + daily pick) is fully
+                        //  functional. Submit / profile / recommendations
+                        //  stay behind authentication below.
                         // ═══════════════════════════════════════════════════
                         .requestMatchers(
-                                "/api/auth/**",              // login/register/OAuth/OTP/providers
-                                "/api/public/**",            // any future public helpers
-                                "/api/health",               // health check
-                                "/api/problems",             // browse problems (list)
-                                "/api/problems/**",          // problem detail (read-only)
-                                "/api/problems2/**",         // legacy read-only mirror
-                                "/api/problems_meta/**",     // legacy read-only mirror
-                                "/api/companies",            // companies list
-                                "/api/companies/**",         // company detail
-                                "/api/daily",                // guest → global pick; user → personalised
-                                "/api/run",                  // ★ guest can RUN code (no submit)
-                                "/api/track",                // analytics events from guests too
-                                "/api/avatars/**"            // public avatar image serving
+                                // ── Auth ──────────────────────────────────
+                                "/api/auth/**",              // login / register / OAuth / OTP / providers / me
+
+                                // ── Ops / health ─────────────────────────
+                                "/api/public/**",
+                                "/api/health",
+
+                                // ── Browse problems ─────────────────────
+                                "/api/problems",
+                                "/api/problems/**",
+                                "/api/problems2/**",
+                                "/api/problems_meta/**",
+
+                                // ── Companies ────────────────────────────
+                                "/api/companies",
+                                "/api/companies/**",
+
+                                // ── Daily challenge (guest: global pick) ─
+                                "/api/daily",
+
+                                // ── Guest code execution ─────────────────
+                                "/api/run",
+
+                                // ── Analytics events (guest tracking) ────
+                                "/api/track",
+
+                                // ── Avatar image serving (public read) ───
+                                "/api/avatars/**"
                         ).permitAll()
 
                         // ═══════════════════════════════════════════════════
@@ -82,10 +101,13 @@ public class SecurityConfig {
 
                         // ═══════════════════════════════════════════════════
                         //  LOGIN REQUIRED  (everything else)
-                        //  ─ /api/submit, /api/recommendations, /api/profile,
-                        //    /api/profile/avatar, /api/submissions,
-                        //    /api/auth/admin/**, /api/auth/me  (also fine — auth/** is public
-                        //    but controller itself uses auth.require for /me)
+                        //  ─ /api/submit
+                        //  ─ /api/recommendations
+                        //  ─ /api/profile, /api/profile/avatar
+                        //  ─ /api/submissions
+                        //  ─ /api/auth/admin/**   (though /api/auth/** is public,
+                        //    controller-level @PreAuthorize still enforces
+                        //    admin role — belt & braces)
                         // ═══════════════════════════════════════════════════
                         .anyRequest().authenticated()
                 )
@@ -95,13 +117,17 @@ public class SecurityConfig {
                             res.setStatus(401);
                             res.setContentType("application/json");
                             res.setCharacterEncoding("UTF-8");
-                            res.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Please sign in to continue\"}");
+                            res.getWriter().write(
+                                    "{\"error\":\"Unauthorized\",\"message\":\"Please sign in to continue\"}"
+                            );
                         })
                         .accessDeniedHandler((req, res, e) -> {
                             res.setStatus(403);
                             res.setContentType("application/json");
                             res.setCharacterEncoding("UTF-8");
-                            res.getWriter().write("{\"error\":\"Forbidden\",\"message\":\"You don't have permission for this action\"}");
+                            res.getWriter().write(
+                                    "{\"error\":\"Forbidden\",\"message\":\"You don't have permission for this action\"}"
+                            );
                         })
                 );
 
@@ -118,12 +144,21 @@ public class SecurityConfig {
         return cfg.getAuthenticationManager();
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  CORS — used by the security filter chain
+    //
+    //  allowCredentials=true ke saath AllowedOrigins="*" allowed nahi
+    //  hota, isliye AllowedOriginPatterns use karte hain — ye sab
+    //  origins allow karta hai aur credentials bhi (Bearer token via
+    //  Authorization header) bhej sakta hai.
+    //
+    //  Frontend runs on a different origin than the backend in production
+    //  (codeup-y3u0.onrender.com ↔ app-16-xiwa.onrender.com), so this
+    //  must NOT be restrictive.
+    // ═══════════════════════════════════════════════════════════════
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        // allowCredentials=true ke saath AllowedOrigins "*" allowed nahi hota,
-        // isliye AllowedOriginPatterns use karte hain — ye sab origins allow karta hai
-        // aur credentials bhi bhej sakta hai (Bearer token ke liye zaroori).
         cfg.setAllowedOriginPatterns(List.of("*"));
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
