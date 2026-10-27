@@ -1,62 +1,61 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-/**
- * LoadingScreen
- *
- * Renders a full-screen loading overlay while API requests are in flight.
- * Gif used as primary asset; falls back to CSS spinner if gif fails to load.
- *
- * RULES:
- *  - Minimum visible duration: 800ms (avoids flash on fast connections)
- *  - Maximum visible duration: 20s (hard cap — never blocks app forever)
- *  - Auto-hides when `visible` prop flips to false (parent controls this)
- *
- * Props:
- *  - visible: boolean — parent toggles based on API request tracking
- *  - message?: string — optional override message
- */
+const GIF_TIMEOUT_MS = 8000;  // Give gif plenty of time to load
+const MIN_VISIBLE_MS = 800;   // Min visible duration to avoid flash
+
 const LoadingScreen = ({ visible = true, message = "Please wait, loading..." }) => {
-    const [showFallback, setShowFallback] = useState(false);
-    const [mountTime] = useState(() => Date.now());
+    const [gifLoaded, setGifLoaded] = useState(false);
+    const [gifFailed, setGifFailed] = useState(false);
     const [minElapsed, setMinElapsed] = useState(false);
     const [opacity, setOpacity] = useState(1);
     const hideTimerRef = useRef(null);
+    const gifTimerRef = useRef(null);
 
-    // Enforce minimum 800ms visible to avoid flash on super-fast loads
+    // Enforce minimum visible duration to avoid flash on fast loads
     useEffect(() => {
-        const t = setTimeout(() => setMinElapsed(true), 800);
+        const t = setTimeout(() => setMinElapsed(true), MIN_VISIBLE_MS);
         return () => clearTimeout(t);
     }, []);
 
-    // Gif fallback — if gif hasn't loaded in 2.5s, switch to CSS spinner
+    // Fallback to spinner only if gif hasn't loaded within 8s
+    // (onLoad or onError below will clear this timer)
     useEffect(() => {
-        const t = setTimeout(() => setShowFallback(true), 2500);
-        return () => clearTimeout(t);
-    }, []);
+        gifTimerRef.current = setTimeout(() => {
+            if (!gifLoaded && !gifFailed) {
+                setGifFailed(true);
+            }
+        }, GIF_TIMEOUT_MS);
 
-    // Fade out when visible flips to false AND minimum time elapsed
+        return () => {
+            if (gifTimerRef.current) clearTimeout(gifTimerRef.current);
+        };
+    }, [gifLoaded, gifFailed]);
+
+    // Fade out when `visible` flips to false
     useEffect(() => {
         if (visible) {
             setOpacity(1);
             return;
         }
-        if (!minElapsed) return; // wait for min time
+        if (!minElapsed) return;
 
-        // Fade out over 300ms
         setOpacity(0);
         hideTimerRef.current = setTimeout(() => {
-            // Parent will unmount us; no state change needed here
+            /* parent will unmount */
         }, 300);
         return () => {
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
         };
     }, [visible, minElapsed]);
 
-    if (!visible && opacity <= 0) {
-        // Fully faded out — parent should have unmounted; return null as safety
-        return null;
-    }
+    if (!visible && opacity <= 0) return null;
+
+    // ── Decide what to render ──
+    // 1. If gif failed → spinner
+    // 2. If gif loaded successfully → show gif (always)
+    // 3. If gif still loading (no onLoad yet) → show gif tag anyway (browser will show when ready)
+    const showSpinner = gifFailed && !gifLoaded;
 
     return (
         <div
@@ -66,21 +65,35 @@ const LoadingScreen = ({ visible = true, message = "Please wait, loading..." }) 
             aria-live="polite"
             aria-label="Loading application"
             data-testid="loading-screen"
-            data-min-elapsed={minElapsed}
+            data-gif-loaded={gifLoaded}
+            data-gif-failed={gifFailed}
         >
-            {!showFallback ? (
+            {showSpinner ? (
+                <div className="h-32 w-32 sm:h-48 sm:w-48 grid place-items-center">
+                    <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                </div>
+            ) : (
                 <img
                     src="/Loading.gif"
                     alt=""
                     aria-hidden="true"
                     className="h-32 w-32 sm:h-48 sm:w-48 object-contain"
-                    onError={() => setShowFallback(true)}
+                    onLoad={() => {
+                        setGifLoaded(true);
+                        if (gifTimerRef.current) {
+                            clearTimeout(gifTimerRef.current);
+                            gifTimerRef.current = null;
+                        }
+                    }}
+                    onError={() => {
+                        setGifFailed(true);
+                        if (gifTimerRef.current) {
+                            clearTimeout(gifTimerRef.current);
+                            gifTimerRef.current = null;
+                        }
+                    }}
                     draggable={false}
                 />
-            ) : (
-                <div className="h-32 w-32 sm:h-48 sm:w-48 grid place-items-center">
-                    <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                </div>
             )}
 
             <p className="mt-5 text-sm sm:text-base font-medium text-muted-foreground">
