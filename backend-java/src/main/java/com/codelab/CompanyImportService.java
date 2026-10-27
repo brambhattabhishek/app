@@ -1,7 +1,11 @@
 package com.codelab;
 
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.UpdateOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -11,19 +15,24 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Pattern;
+
+import static com.mongodb.client.model.Filters.eq;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CompanyImportService {
 
-    private static final String GITHUB_RAW = "https://raw.githubusercontent.com/liquidslr/leetcode-company-wise-problems/main/";
+    private static final String GITHUB_RAW =
+            "https://raw.githubusercontent.com/liquidslr/leetcode-company-wise-problems/main/";
+
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
 
-    // ★ Popular companies to check when auto-detecting a single problem
-    // (Checking all 300+ would take too long per add — 40 is a good balance)
+    // ★ Popular companies used only for auto-detecting companies for a SINGLE problem.
+    //   (300+ would be too slow per add — 40 is a good balance)
     private static final List<String> POPULAR_COMPANIES = List.of(
             "Amazon", "Google", "Microsoft", "Meta", "Apple", "Adobe",
             "Bloomberg", "Uber", "Netflix", "Tesla", "Goldman Sachs",
@@ -31,17 +40,25 @@ public class CompanyImportService {
             "Accenture", "Cisco", "Oracle", "Salesforce", "LinkedIn",
             "Twitter", "Airbnb", "Atlassian", "Pinterest", "Snap",
             "ByteDance", "Samsung", "Intel", "Nvidia", "Walmart", "eBay",
-            "PayPal", "Stripe", "Zoom", "Dropbox", "Slack", "Spotify", "Adobe"
+            "PayPal", "Stripe", "Zoom", "Dropbox", "Slack", "Spotify"
     );
 
-    // ★ Cache CSV per company (avoid re-fetching)
+    // Which CSV files exist per company folder (in the GitHub repo)
+    private static final String[] CSV_FILES = {
+            "5. All.csv",
+            "4. More Than Six Months.csv",
+            "3. Six Months.csv",
+            "2. Three Months.csv",
+            "1. Thirty Days.csv"
+    };
+
+    /** Cache: company → CSV body (or null if not found) */
     private final Map<String, String> csvCache = new ConcurrentHashMap<>();
 
-    private final ProblemRepository problemRepo;
-    private final ProblemMetaRepository metaRepo;
+    private final MongoTemplate mongo;
 
     // ═══════════════════════════════════════════════════════════════
-    //  PUBLIC: Bulk import (existing method — user clicks button)
+    //  PUBLIC: Bulk import
     // ═══════════════════════════════════════════════════════════════
     public Map<String, Object> importCompanies(List<String> companyNames) {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -49,18 +66,33 @@ public class CompanyImportService {
         int totalProblemsUpdated = 0;
         List<String> errors = new ArrayList<>();
 
-        for (String company : companyNames) {
+        if (companyNames == null || companyNames.isEmpty()) {
+            result.put("_summary", Map.of(
+                    "totalCompanies", 0,
+                    "totalProblemsUpdated", 0,
+                    "errors", List.of("No companies provided")
+            ));
+            return result;
+        }
+
+        for (String rawCompany : companyNames) {
+            if (rawCompany == null || rawCompany.isBlank()) continue;
+            String company = rawCompany.trim();
+
             try {
                 log.info("Importing company: {}", company);
                 int updated = importSingleCompany(company);
                 totalProblemsUpdated += updated;
                 totalCompanies++;
                 result.put(company, Map.of("status", "success", "problemsUpdated", updated));
-                Thread.sleep(300);
+                Thread.sleep(200);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
             } catch (Exception e) {
                 log.error("Failed to import {}: {}", company, e.getMessage());
-                result.put(company, Map.of("status", "error", "error", e.getMessage()));
-                errors.add(company + ": " + e.getMessage());
+                result.put(company, Map.of("status", "error", "error", safeMsg(e)));
+                errors.add(company + ": " + safeMsg(e));
             }
         }
 
@@ -72,6 +104,10 @@ public class CompanyImportService {
         return result;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Import one company
+    //  ★ Uses raw MongoTemplate write — bypasses metaRepo.save quirk
+    // ═══════════════════════════════════════════════════════════════
     private int importSingleCompany(String company) throws Exception {
         String csvContent = fetchCompanyCsv(company);
         if (csvContent == null) {
@@ -81,25 +117,61 @@ public class CompanyImportService {
         List<CompanyProblem> problems = parseCsv(csvContent);
         log.info("Parsed {} problems from {}", problems.size(), company);
 
+        if (problems.isEmpty()) return 0;
+
+        // Valid slugs from problems collection
+        Set<String> validSlugs = new HashSet<>();
+        for (Document d : mongo.getCollection("problems").find(new Document("slug", 1))) {
+            String s = d.getString("slug");
+            if (s != null) validSlugs.add(s);
+        }
+
+        MongoCollection<Document> metaCol = mongo.getCollection("problem_meta");
         int updated = 0;
         int skippedNoMeta = 0;
+        Set<String> seenSlugs = new HashSet<>(); // avoid double-counting within one company
 
         for (CompanyProblem cp : problems) {
             String slug = extractSlug(cp.link);
-            if (slug == null) continue;
-
-            var metaOpt = metaRepo.findBySlug(slug);
-            if (metaOpt.isPresent()) {
-                ProblemMeta meta = metaOpt.get();
-                if (meta.getCompanies() == null) meta.setCompanies(new ArrayList<>());
-                if (!meta.getCompanies().contains(company)) {
-                    meta.getCompanies().add(company);
-                    metaRepo.save(meta);
-                    updated++;
-                }
-            } else {
+            if (slug == null || !validSlugs.contains(slug)) {
                 skippedNoMeta++;
+                continue;
             }
+            if (!seenSlugs.add(slug)) continue; // same slug multiple times in one CSV
+
+            // ★ Raw upsert — do not use metaRepo.save()
+            Document existing = metaCol.find(eq("slug", slug)).first();
+            if (existing == null) {
+                // No meta document — skip (problem may not have been added via admin)
+                skippedNoMeta++;
+                continue;
+            }
+
+            List<String> companies = new ArrayList<>();
+            Object existingCompanies = existing.get("companies");
+            if (existingCompanies instanceof List<?> list) {
+                for (Object c : list) {
+                    if (c != null) companies.add(c.toString().trim());
+                }
+            }
+
+            if (companies.contains(company)) continue; // already tagged
+
+            companies.add(company);
+            companies = companies.stream()
+                    .filter(c -> !c.isBlank())
+                    .distinct()
+                    .sorted()
+                    .toList();
+
+            // ★ Raw update — bypasses Spring Data converter
+            metaCol.updateOne(
+                    eq("slug", slug),
+                    new Document("$set", new Document("companies", companies)),
+                    new UpdateOptions().upsert(false)
+            );
+
+            updated++;
         }
 
         if (skippedNoMeta > 0) {
@@ -110,16 +182,21 @@ public class CompanyImportService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ NEW: Auto-detect companies for a SINGLE problem
-    //  Called from LeetCodeAdminService.addProblems()
+    //  Auto-detect companies for a SINGLE problem (called from admin add)
     // ═══════════════════════════════════════════════════════════════
     public List<String> findCompaniesForProblem(String slug) {
         if (slug == null || slug.isBlank()) return List.of();
 
         log.info("Auto-detecting companies for slug: {}", slug);
-        List<String> found = Collections.synchronizedList(new ArrayList<>());
 
+        // Pre-compile a pattern — safer than raw string contains()
+        Pattern slugPattern = Pattern.compile(
+                "/problems/" + Pattern.quote(slug) + "(?:[/?#\"',\\s]|$)"
+        );
+
+        List<String> found = Collections.synchronizedList(new ArrayList<>());
         ExecutorService pool = Executors.newFixedThreadPool(10);
+
         try {
             List<Callable<Void>> tasks = new ArrayList<>();
             for (String company : POPULAR_COMPANIES) {
@@ -127,12 +204,7 @@ public class CompanyImportService {
                     try {
                         String csv = fetchCompanyCsv(company);
                         if (csv == null) return null;
-
-                        // Check if slug exists in CSV
-                        if (csv.contains("/problems/" + slug + "\"") ||
-                                csv.contains("/problems/" + slug + ",") ||
-                                csv.contains("/problems/" + slug + "\n") ||
-                                csv.endsWith("/problems/" + slug)) {
+                        if (slugPattern.matcher(csv).find()) {
                             found.add(company);
                             log.debug("✓ {} has {}", company, slug);
                         }
@@ -153,7 +225,6 @@ public class CompanyImportService {
             pool.shutdownNow();
         }
 
-        // Sort alphabetically for consistency
         List<String> sorted = new ArrayList<>(found);
         Collections.sort(sorted);
         log.info("Found {} companies for {}: {}", sorted.size(), slug, sorted);
@@ -161,60 +232,57 @@ public class CompanyImportService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Fetch CSV with cache
+    //  Fetch CSV with cache — tries 5. All.csv → 1. Thirty Days.csv
     // ═══════════════════════════════════════════════════════════════
     private String fetchCompanyCsv(String company) {
-        // Check cache first
         if (csvCache.containsKey(company)) {
             return csvCache.get(company);
         }
 
-        String[] csvFiles = {
-                "5. All.csv",
-                "4. More Than Six Months.csv",
-                "3. Six Months.csv",
-                "2. Three Months.csv",
-                "1. Thirty Days.csv"
-        };
-
-        for (String csvFile : csvFiles) {
+        for (String csvFile : CSV_FILES) {
             try {
-                String encodedCompany = company.replace(" ", "%20");
-                String encodedFile = csvFile.replace(" ", "%20");
-                String url = GITHUB_RAW + encodedCompany + "/" + encodedFile;
+                String url = GITHUB_RAW
+                        + encodeSegment(company) + "/"
+                        + encodeSegment(csvFile);
 
                 log.info("Trying: {}", url);
 
                 HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                         .timeout(Duration.ofSeconds(30))
                         .header("User-Agent", "CodWP-Importer")
-                        .GET().build();
+                        .GET()
+                        .build();
+
                 HttpResponse<String> res = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
 
-                if (res.statusCode() == 200) {
-                    String body = res.body();
-                    csvCache.put(company, body);
-                    log.info("✓ Fetched {}/{} ({} bytes)", company, csvFile, body.length());
-                    return body;
+                if (res.statusCode() == 200 && !res.body().isBlank()) {
+                    csvCache.put(company, res.body());
+                    log.info("✓ Fetched {}/{} ({} bytes)", company, csvFile, res.body().length());
+                    return res.body();
                 }
             } catch (Exception e) {
                 log.debug("Fetch failed {}/{}: {}", company, csvFile, e.getMessage());
             }
         }
 
-        // Cache miss (company doesn't exist)
         csvCache.put(company, null);
         log.warn("✗ No CSV found for {}", company);
         return null;
     }
 
+    // URL-encode a single path segment (preserves spaces → %20, keeps dots)
+    private static String encodeSegment(String s) {
+        return s.replace(" ", "%20");
+    }
+
     // ═══════════════════════════════════════════════════════════════
-    //  CSV parsing helpers
+    //  CSV parsing
     // ═══════════════════════════════════════════════════════════════
     private List<CompanyProblem> parseCsv(String csv) {
         List<CompanyProblem> result = new ArrayList<>();
-        String[] lines = csv.split("\n");
+        if (csv == null || csv.isBlank()) return result;
 
+        String[] lines = csv.split("\r?\n");
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) continue;
@@ -230,9 +298,10 @@ public class CompanyImportService {
                 cp.acceptance = parseDouble(parts[3]) * 100;
                 cp.link = parts[4].trim();
                 cp.topics = parts.length > 5 ? parts[5].replace("\"", "").trim() : "";
+                if (cp.link.isBlank()) continue;
                 result.add(cp);
             } catch (Exception e) {
-                log.warn("Failed to parse line: {}", line);
+                log.debug("Failed to parse line: {}", line);
             }
         }
         return result;
@@ -244,11 +313,10 @@ public class CompanyImportService {
         boolean inQuotes = false;
 
         for (char c : line.toCharArray()) {
-            if (c == '"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
+            if (c == '"') inQuotes = !inQuotes;
+            else if (c == ',' && !inQuotes) {
                 parts.add(cur.toString());
-                cur = new StringBuilder();
+                cur.setLength(0);
             } else {
                 cur.append(c);
             }
@@ -259,14 +327,28 @@ public class CompanyImportService {
 
     private String extractSlug(String link) {
         if (link == null) return null;
-        String[] parts = link.split("/problems/");
-        if (parts.length < 2) return null;
-        return parts[1].split("/")[0];
+        int idx = link.indexOf("/problems/");
+        if (idx < 0) return null;
+        String rest = link.substring(idx + "/problems/".length());
+        // Trim trailing slug at first '/', '?', '#'
+        int end = rest.length();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (c == '/' || c == '?' || c == '#') { end = i; break; }
+        }
+        String slug = rest.substring(0, end).trim();
+        return slug.isEmpty() ? null : slug;
     }
 
     private double parseDouble(String s) {
         try { return Double.parseDouble(s.trim()); }
         catch (Exception e) { return 0.0; }
+    }
+
+    private static String safeMsg(Throwable t) {
+        if (t == null) return "unknown error";
+        String m = t.getMessage();
+        return m == null || m.isBlank() ? t.getClass().getSimpleName() : m;
     }
 
     static class CompanyProblem {

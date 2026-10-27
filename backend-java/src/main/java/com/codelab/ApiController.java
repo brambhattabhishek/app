@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -96,6 +98,16 @@ public class ApiController {
                 .toList();
     }
 
+    /** Safe URL-decode for path parameters. */
+    private static String decode(String s) {
+        if (s == null) return null;
+        try {
+            return URLDecoder.decode(s, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return s;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  ★ companyToSlugs() — FIXED: uses raw problem_meta docs
     //  Reads directly from MongoTemplate → no metaRepo.findAll() issues.
@@ -177,7 +189,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ DETAIL — FIXED: raw meta read instead of metaRepo.findBySlug
+    //  ★ DETAIL — raw meta read instead of metaRepo.findBySlug
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/problems/{slug}")
     public Map<String, Object> detail(@PathVariable String slug,
@@ -378,7 +390,7 @@ public class ApiController {
         return m;
     }
 
-    // ★ FIXED: raw meta read
+    // ★ raw meta read
     Map<String, Object> summaryWithCompanies(Document d) {
         Map<String, Object> m = summary(d);
         m.put("companies", companiesOf(metaDoc(d.getString("slug"))));
@@ -541,13 +553,21 @@ public class ApiController {
             m.put("solved", (int) solvedCount);
             out.add(m);
         });
-        out.sort((a, b) -> (int) b.get("count") - (int) a.get("count"));
+        // ★ Null-safe descending sort by count
+        out.sort((a, b) -> {
+            int ca = a.get("count") instanceof Number ? ((Number) a.get("count")).intValue() : 0;
+            int cb = b.get("count") instanceof Number ? ((Number) b.get("count")).intValue() : 0;
+            return Integer.compare(cb, ca);
+        });
         return out;
     }
 
     @GetMapping("/companies/{name}")
     public Map<String, Object> company(@PathVariable String name,
                                        @RequestHeader(value = "Authorization", required = false) String h) {
+        // ★ URL-decode the path param (handles "AQR%20Capital")
+        String decodedName = decode(name);
+
         Document u = auth.optional(h);
         Map<String, String> statusMap = new HashMap<>();
         if (u != null) {
@@ -558,10 +578,26 @@ public class ApiController {
             }
         }
 
-        Set<String> slugs = companyToSlugs().get(name);
-        if (slugs == null || slugs.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found");
+        // ★ Try both raw and decoded name — case-insensitive fallback
+        Map<String, Set<String>> c2s = companyToSlugs();
+        Set<String> slugs = c2s.get(decodedName);
+        if (slugs == null) slugs = c2s.get(name);
+        if (slugs == null) {
+            // Case-insensitive match
+            for (var entry : c2s.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(decodedName)) {
+                    slugs = entry.getValue();
+                    decodedName = entry.getKey();
+                    break;
+                }
+            }
         }
+
+        if (slugs == null || slugs.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found: " + decodedName);
+        }
+
+        final String canonicalName = decodedName;
 
         List<Map<String, Object>> list = new ArrayList<>();
         Map<String, int[]> byDiff = new LinkedHashMap<>();
@@ -574,7 +610,7 @@ public class ApiController {
             if (p == null) continue;
 
             Map<String, Object> m = summary(p);
-            m.put("companies", List.of(name));
+            m.put("companies", List.of(canonicalName));
             String s = statusMap.getOrDefault(slug, "todo");
             m.put("status", s);
             list.add(m);
@@ -595,7 +631,7 @@ public class ApiController {
                 .thenComparing(m -> String.valueOf(m.get("title"))));
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("name", name);
+        out.put("name", canonicalName);
         out.put("problems", list);
         out.put("total", list.size());
         out.put("solved", list.stream().filter(m -> "solved".equals(m.get("status"))).count());
