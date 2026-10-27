@@ -33,6 +33,9 @@ public class ApiController {
     record RunReq(String slug, String language, String code, List<String> inputs) {}
     record SubmitReq(String slug, String language, String code) {}
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Core helpers
+    // ═══════════════════════════════════════════════════════════════
     Document problem(String slug) {
         Document d = mongo.getCollection("problems").find(eq("slug", slug)).first();
         if (d == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found");
@@ -64,15 +67,17 @@ public class ApiController {
 
     // ═══════════════════════════════════════════════════════════════
     //  ★ RAW DOC HELPERS — bypass Spring Data quirks
+    //  WHY: metaRepo.findAll() fails silently to deserialize
+    //       problem_meta documents in some Spring Data MongoDB versions,
+    //       even though findBySlug() works fine. Reading raw Documents
+    //       via MongoTemplate guarantees data is always accessible.
     // ═══════════════════════════════════════════════════════════════
 
-    /** Get raw problem_meta document for a slug (bypasses metaRepo). */
     private Document metaDoc(String slug) {
         if (slug == null) return null;
         return mongo.getCollection("problem_meta").find(eq("slug", slug)).first();
     }
 
-    /** Extract companies list from a raw meta document — null-safe. */
     private static List<String> companiesOf(Document meta) {
         if (meta == null) return List.of();
         Object obj = meta.get("companies");
@@ -87,7 +92,6 @@ public class ApiController {
                 .toList();
     }
 
-    /** Extract a string list from a raw meta field — null-safe. */
     private static List<String> stringListOf(Document meta, String key) {
         if (meta == null) return List.of();
         Object obj = meta.get(key);
@@ -98,7 +102,6 @@ public class ApiController {
                 .toList();
     }
 
-    /** Safe URL-decode for path parameters. */
     private static String decode(String s) {
         if (s == null) return null;
         try {
@@ -109,18 +112,16 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ companyToSlugs() — FIXED: uses raw problem_meta docs
-    //  Reads directly from MongoTemplate → no metaRepo.findAll() issues.
+    //  ★ companyToSlugs() — FIXED: reads problem_meta as raw Documents
+    //  Guarantees /api/companies is never empty when meta has companies.
     // ═══════════════════════════════════════════════════════════════
     private Map<String, Set<String>> companyToSlugs() {
-        // 1. Valid slugs from problems collection
         Set<String> validSlugs = new HashSet<>();
         for (Document p : mongo.getCollection("problems").find(new Document("slug", 1))) {
             String s = p.getString("slug");
             if (s != null) validSlugs.add(s);
         }
 
-        // 2. Iterate problem_meta raw docs
         Map<String, Set<String>> map = new TreeMap<>();
         for (Document meta : mongo.getCollection("problem_meta").find()) {
             String slug = meta.getString("slug");
@@ -137,7 +138,6 @@ public class ApiController {
             }
         }
 
-        // 3. Debug log — helps confirm fix on Render
         long metaCount = mongo.getCollection("problem_meta").countDocuments();
         System.out.println("[companyToSlugs] validSlugs=" + validSlugs.size()
                 + ", metaCount=" + metaCount
@@ -189,7 +189,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ DETAIL — raw meta read instead of metaRepo.findBySlug
+    //  ★ DETAIL — raw meta read (fixes leading dot in daily too)
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/problems/{slug}")
     public Map<String, Object> detail(@PathVariable String slug,
@@ -202,7 +202,6 @@ public class ApiController {
         m.remove("hiddenTests");
         m.put("id", idOf(d));
 
-        // ★ Read meta directly from MongoTemplate
         Document meta = metaDoc(slug);
         m.put("hints", stringListOf(meta, "hints"));
         m.put("companies", companiesOf(meta));
@@ -379,7 +378,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  summary() — id fallback (daily challenge fix)
+    //  summary() — id fallback (fixes ". String to Integer (atoi)")
     // ═══════════════════════════════════════════════════════════════
     static Map<String, Object> summary(Document d) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -390,7 +389,6 @@ public class ApiController {
         return m;
     }
 
-    // ★ raw meta read
     Map<String, Object> summaryWithCompanies(Document d) {
         Map<String, Object> m = summary(d);
         m.put("companies", companiesOf(metaDoc(d.getString("slug"))));
@@ -398,7 +396,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  RECOMMENDATIONS — 3-tier fallback chain
+    //  RECOMMENDATIONS — 3-tier fallback (fixes empty recommendations)
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/recommendations")
     public Map<String, Object> recommendations(@RequestHeader(value = "Authorization", required = false) String h) {
@@ -532,7 +530,7 @@ public class ApiController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  COMPANIES — guest browsable
+    //  COMPANIES — guest browsable, dedupe + sort
     // ═══════════════════════════════════════════════════════════════
     @GetMapping("/companies")
     public List<Map<String, Object>> companies(@RequestHeader(value = "Authorization", required = false) String h) {
@@ -553,7 +551,6 @@ public class ApiController {
             m.put("solved", (int) solvedCount);
             out.add(m);
         });
-        // ★ Null-safe descending sort by count
         out.sort((a, b) -> {
             int ca = a.get("count") instanceof Number ? ((Number) a.get("count")).intValue() : 0;
             int cb = b.get("count") instanceof Number ? ((Number) b.get("count")).intValue() : 0;
@@ -565,7 +562,6 @@ public class ApiController {
     @GetMapping("/companies/{name}")
     public Map<String, Object> company(@PathVariable String name,
                                        @RequestHeader(value = "Authorization", required = false) String h) {
-        // ★ URL-decode the path param (handles "AQR%20Capital")
         String decodedName = decode(name);
 
         Document u = auth.optional(h);
@@ -578,12 +574,10 @@ public class ApiController {
             }
         }
 
-        // ★ Try both raw and decoded name — case-insensitive fallback
         Map<String, Set<String>> c2s = companyToSlugs();
         Set<String> slugs = c2s.get(decodedName);
         if (slugs == null) slugs = c2s.get(name);
         if (slugs == null) {
-            // Case-insensitive match
             for (var entry : c2s.entrySet()) {
                 if (entry.getKey().equalsIgnoreCase(decodedName)) {
                     slugs = entry.getValue();

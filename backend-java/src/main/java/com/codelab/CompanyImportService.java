@@ -31,8 +31,7 @@ public class CompanyImportService {
             .connectTimeout(Duration.ofSeconds(15))
             .build();
 
-    // ★ Popular companies used only for auto-detecting companies for a SINGLE problem.
-    //   (300+ would be too slow per add — 40 is a good balance)
+    // ★ Popular companies for single-problem auto-detect (batch of 40)
     private static final List<String> POPULAR_COMPANIES = List.of(
             "Amazon", "Google", "Microsoft", "Meta", "Apple", "Adobe",
             "Bloomberg", "Uber", "Netflix", "Tesla", "Goldman Sachs",
@@ -43,7 +42,7 @@ public class CompanyImportService {
             "PayPal", "Stripe", "Zoom", "Dropbox", "Slack", "Spotify"
     );
 
-    // Which CSV files exist per company folder (in the GitHub repo)
+    // CSV files that exist per company folder in the GitHub repo
     private static final String[] CSV_FILES = {
             "5. All.csv",
             "4. More Than Six Months.csv",
@@ -52,7 +51,7 @@ public class CompanyImportService {
             "1. Thirty Days.csv"
     };
 
-    /** Cache: company → CSV body (or null if not found) */
+    /** Cache: company (lowercased) → CSV body (or null if not found) */
     private final Map<String, String> csvCache = new ConcurrentHashMap<>();
 
     private final MongoTemplate mongo;
@@ -75,10 +74,13 @@ public class CompanyImportService {
             return result;
         }
 
-        for (String rawCompany : companyNames) {
-            if (rawCompany == null || rawCompany.isBlank()) continue;
-            String company = rawCompany.trim();
+        // Dedupe request list (case-insensitive)
+        LinkedHashSet<String> uniqueCompanies = new LinkedHashSet<>();
+        for (String raw : companyNames) {
+            if (raw != null && !raw.isBlank()) uniqueCompanies.add(raw.trim());
+        }
 
+        for (String company : uniqueCompanies) {
             try {
                 log.info("Importing company: {}", company);
                 int updated = importSingleCompany(company);
@@ -105,8 +107,7 @@ public class CompanyImportService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Import one company
-    //  ★ Uses raw MongoTemplate write — bypasses metaRepo.save quirk
+    //  Import one company — ★ raw MongoTemplate write, dedupe-safe
     // ═══════════════════════════════════════════════════════════════
     private int importSingleCompany(String company) throws Exception {
         String csvContent = fetchCompanyCsv(company);
@@ -129,7 +130,10 @@ public class CompanyImportService {
         MongoCollection<Document> metaCol = mongo.getCollection("problem_meta");
         int updated = 0;
         int skippedNoMeta = 0;
-        Set<String> seenSlugs = new HashSet<>(); // avoid double-counting within one company
+        Set<String> seenSlugs = new HashSet<>();
+
+        // Canonical company name (first-seen casing preserved)
+        final String canonicalCompany = canonicalize(company);
 
         for (CompanyProblem cp : problems) {
             String slug = extractSlug(cp.link);
@@ -139,35 +143,49 @@ public class CompanyImportService {
             }
             if (!seenSlugs.add(slug)) continue; // same slug multiple times in one CSV
 
-            // ★ Raw upsert — do not use metaRepo.save()
             Document existing = metaCol.find(eq("slug", slug)).first();
             if (existing == null) {
-                // No meta document — skip (problem may not have been added via admin)
                 skippedNoMeta++;
                 continue;
             }
 
-            List<String> companies = new ArrayList<>();
+            // Normalize existing companies + dedupe (case-insensitive)
+            LinkedHashMap<String, String> byLower = new LinkedHashMap<>();
             Object existingCompanies = existing.get("companies");
             if (existingCompanies instanceof List<?> list) {
                 for (Object c : list) {
-                    if (c != null) companies.add(c.toString().trim());
+                    if (c == null) continue;
+                    String cs = c.toString().trim();
+                    if (cs.isEmpty()) continue;
+                    byLower.putIfAbsent(cs.toLowerCase(), cs);
                 }
             }
 
-            if (companies.contains(company)) continue; // already tagged
+            String key = canonicalCompany.toLowerCase();
+            if (byLower.containsKey(key)) {
+                // Already tagged (case-insensitive) — heal duplicates in DB by rewriting normalized list
+                List<String> normalized = new ArrayList<>(byLower.values());
+                normalized.sort(String.CASE_INSENSITIVE_ORDER);
+                // Only rewrite if length shrank (i.e., dupes were removed)
+                int originalSize = (existingCompanies instanceof List<?> l) ? l.size() : 0;
+                if (normalized.size() != originalSize) {
+                    metaCol.updateOne(
+                            eq("slug", slug),
+                            new Document("$set", new Document("companies", normalized)),
+                            new UpdateOptions().upsert(false)
+                    );
+                }
+                continue;
+            }
 
-            companies.add(company);
-            companies = companies.stream()
-                    .filter(c -> !c.isBlank())
-                    .distinct()
-                    .sorted()
-                    .toList();
+            // Add company (canonical casing) + sort
+            byLower.put(key, canonicalCompany);
+            List<String> sorted = new ArrayList<>(byLower.values());
+            sorted.sort(String.CASE_INSENSITIVE_ORDER);
 
-            // ★ Raw update — bypasses Spring Data converter
             metaCol.updateOne(
                     eq("slug", slug),
-                    new Document("$set", new Document("companies", companies)),
+                    new Document("$set", new Document("companies", sorted)),
                     new UpdateOptions().upsert(false)
             );
 
@@ -182,16 +200,16 @@ public class CompanyImportService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Auto-detect companies for a SINGLE problem (called from admin add)
+    //  Auto-detect companies for a SINGLE problem
     // ═══════════════════════════════════════════════════════════════
     public List<String> findCompaniesForProblem(String slug) {
         if (slug == null || slug.isBlank()) return List.of();
 
         log.info("Auto-detecting companies for slug: {}", slug);
 
-        // Pre-compile a pattern — safer than raw string contains()
+        // Safe slug match: /problems/<slug> followed by path-separator OR boundary
         Pattern slugPattern = Pattern.compile(
-                "/problems/" + Pattern.quote(slug) + "(?:[/?#\"',\\s]|$)"
+                "/problems/" + Pattern.quote(slug) + "(?:[/?#\"',\\s)]|$)"
         );
 
         List<String> found = Collections.synchronizedList(new ArrayList<>());
@@ -205,7 +223,7 @@ public class CompanyImportService {
                         String csv = fetchCompanyCsv(company);
                         if (csv == null) return null;
                         if (slugPattern.matcher(csv).find()) {
-                            found.add(company);
+                            found.add(canonicalize(company));
                             log.debug("✓ {} has {}", company, slug);
                         }
                     } catch (Exception e) {
@@ -225,8 +243,12 @@ public class CompanyImportService {
             pool.shutdownNow();
         }
 
-        List<String> sorted = new ArrayList<>(found);
-        Collections.sort(sorted);
+        // Dedupe (case-insensitive) + sort
+        LinkedHashMap<String, String> unique = new LinkedHashMap<>();
+        for (String c : found) unique.putIfAbsent(c.toLowerCase(), c);
+        List<String> sorted = new ArrayList<>(unique.values());
+        sorted.sort(String.CASE_INSENSITIVE_ORDER);
+
         log.info("Found {} companies for {}: {}", sorted.size(), slug, sorted);
         return sorted;
     }
@@ -235,14 +257,13 @@ public class CompanyImportService {
     //  Fetch CSV with cache — tries 5. All.csv → 1. Thirty Days.csv
     // ═══════════════════════════════════════════════════════════════
     private String fetchCompanyCsv(String company) {
-        if (csvCache.containsKey(company)) {
-            return csvCache.get(company);
-        }
+        String key = company.toLowerCase();
+        if (csvCache.containsKey(key)) return csvCache.get(key);
 
         for (String csvFile : CSV_FILES) {
             try {
                 String url = GITHUB_RAW
-                        + encodeSegment(company) + "/"
+                        + encodeSegment(canonicalize(company)) + "/"
                         + encodeSegment(csvFile);
 
                 log.info("Trying: {}", url);
@@ -256,7 +277,7 @@ public class CompanyImportService {
                 HttpResponse<String> res = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
 
                 if (res.statusCode() == 200 && !res.body().isBlank()) {
-                    csvCache.put(company, res.body());
+                    csvCache.put(key, res.body());
                     log.info("✓ Fetched {}/{} ({} bytes)", company, csvFile, res.body().length());
                     return res.body();
                 }
@@ -265,18 +286,18 @@ public class CompanyImportService {
             }
         }
 
-        csvCache.put(company, null);
+        csvCache.put(key, null);
         log.warn("✗ No CSV found for {}", company);
         return null;
     }
 
-    // URL-encode a single path segment (preserves spaces → %20, keeps dots)
+    // URL-encode a single path segment (space → %20, keep dots)
     private static String encodeSegment(String s) {
         return s.replace(" ", "%20");
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  CSV parsing
+    //  CSV parsing — robust against quoted commas & escaped quotes
     // ═══════════════════════════════════════════════════════════════
     private List<CompanyProblem> parseCsv(String csv) {
         List<CompanyProblem> result = new ArrayList<>();
@@ -307,14 +328,23 @@ public class CompanyImportService {
         return result;
     }
 
+    /** Split a CSV line honoring quoted fields and "" escapes. */
     private String[] splitCsvLine(String line) {
         List<String> parts = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         boolean inQuotes = false;
 
-        for (char c : line.toCharArray()) {
-            if (c == '"') inQuotes = !inQuotes;
-            else if (c == ',' && !inQuotes) {
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') {
+                // Handle escaped "" inside quoted field
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    cur.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
                 parts.add(cur.toString());
                 cur.setLength(0);
             } else {
@@ -325,12 +355,14 @@ public class CompanyImportService {
         return parts.toArray(new String[0]);
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Slug extraction — safe from URL tails (?query, #hash)
+    // ═══════════════════════════════════════════════════════════════
     private String extractSlug(String link) {
         if (link == null) return null;
         int idx = link.indexOf("/problems/");
         if (idx < 0) return null;
         String rest = link.substring(idx + "/problems/".length());
-        // Trim trailing slug at first '/', '?', '#'
         int end = rest.length();
         for (int i = 0; i < rest.length(); i++) {
             char c = rest.charAt(i);
@@ -338,6 +370,16 @@ public class CompanyImportService {
         }
         String slug = rest.substring(0, end).trim();
         return slug.isEmpty() ? null : slug;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Helpers
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Trim, collapse internal whitespace, preserve case. */
+    private static String canonicalize(String s) {
+        if (s == null) return "";
+        return s.trim().replaceAll("\\s+", " ");
     }
 
     private double parseDouble(String s) {
