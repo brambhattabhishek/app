@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, CircleDashed, Search, Shuffle } from "lucide-react";
+import { CheckCircle2, CircleDashed, Search, Shuffle, X, LogIn } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ForYou from "@/components/ForYou";
 import DailyChallenge from "@/components/DailyChallenge";
@@ -35,6 +35,24 @@ function StatCard({ label, solved, total, cls, delay }) {
     );
 }
 
+function SkeletonRows() {
+    return (
+        <div className="rounded-xl border overflow-hidden bg-card">
+            <div className="h-10 bg-secondary/30 border-b" />
+            {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                    key={i}
+                    className="h-14 flex items-center gap-3 px-4 border-b last:border-0 animate-pulse"
+                >
+                    <div className="w-4 h-4 rounded bg-secondary shrink-0" />
+                    <div className="h-3.5 bg-secondary rounded w-1/2" />
+                    <div className="ml-auto h-3 w-16 bg-secondary rounded" />
+                </div>
+            ))}
+        </div>
+    );
+}
+
 export default function ProblemsPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -46,6 +64,9 @@ export default function ProblemsPage() {
     const [tag, setTag] = useState(null);
     const [company, setCompany] = useState("all");
 
+    const isGuest = !user && user !== null;
+    const authLoading = user === null;
+
     const tags = useMemo(
         () => [...new Set(items.flatMap((p) => p.tags || []))].sort(),
         [items]
@@ -55,34 +76,78 @@ export default function ProblemsPage() {
         [items]
     );
 
-    const rows = items.filter((p) => {
-        const title = (p.title || "").toLowerCase();
-        const query = q.toLowerCase();
-        return (
-            (diff === "all" || p.difficulty === diff) &&
-            (status === "all" || p.status === status) &&
-            (!tag || (p.tags || []).includes(tag)) &&
-            (company === "all" || (p.companies || []).includes(company)) &&
-            (title.includes(query) || String(p.id) === q.trim())
-        );
-    });
+    const rows = useMemo(() => {
+        const query = q.toLowerCase().trim();
+        return items.filter((p) => {
+            const title = (p.title || "").toLowerCase();
+            return (
+                (diff === "all" || p.difficulty === diff) &&
+                (status === "all" || p.status === status) &&
+                (!tag || (p.tags || []).includes(tag)) &&
+                (company === "all" || (p.companies || []).includes(company)) &&
+                (!query || title.includes(query) || String(p.id) === query)
+            );
+        });
+    }, [items, q, diff, status, tag, company]);
 
-    const count = (d, s) =>
-        items.filter(
-            (p) => p.difficulty === d && (!s || p.status === "solved")
-        ).length;
+    const count = (d, solvedOnly) =>
+        items.filter((p) => p.difficulty === d && (!solvedOnly || p.status === "solved")).length;
 
+    const hasActiveFilters =
+        diff !== "all" || status !== "all" || company !== "all" || !!tag || !!q.trim();
+
+    const clearFilters = () => {
+        setQ("");
+        setDiff("all");
+        setStatus("all");
+        setCompany("all");
+        setTag(null);
+    };
+
+    const pickRandom = () => {
+        if (!items.length) return;
+        const random = items[Math.floor(Math.random() * items.length)];
+        navigate(`/problems/${random.slug}`);
+    };
+
+    // ═══════════════════════════════════════════════════════
+    // Initial loading (no cache, no placeholder data)
+    // ═══════════════════════════════════════════════════════
     if (isLoading && items.length === 0) {
         return (
-            <div className="p-6 sm:p-10 text-muted-foreground text-sm">
-                Loading problems…
-            </div>
+            <main className="relative z-10 max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-10">
+                <div className="mb-6 sm:mb-8">
+                    <div className="h-3 w-24 bg-secondary rounded mb-3 animate-pulse" />
+                    <div className="h-8 sm:h-10 w-64 bg-secondary rounded mb-2 animate-pulse" />
+                    <div className="h-3 w-96 max-w-full bg-secondary rounded animate-pulse" />
+                </div>
+                <SkeletonRows />
+            </main>
         );
     }
 
     return (
         <main className="relative z-10 max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-10">
-            {/* ── Header ───────────────────────────────── */}
+
+            {/* ═══ Guest banner ═══ */}
+            {isGuest && (
+                <div
+                    className="rise mb-4 sm:mb-6 flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-[11px] sm:text-xs"
+                    data-testid="guest-banner"
+                >
+                    <LogIn className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="text-muted-foreground min-w-0">
+                        <strong className="text-foreground">Guest mode:</strong>{" "}
+                        Browse and run code freely.{" "}
+                        <Link to="/login" className="text-primary font-semibold hover:underline">
+                            Sign in
+                        </Link>{" "}
+                        to submit, get a daily challenge, and track your progress.
+                    </span>
+                </div>
+            )}
+
+            {/* ═══ Header ═══ */}
             <div className="rise flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-6 mb-6 sm:mb-8">
                 <div className="min-w-0">
                     <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-primary mb-2">
@@ -97,58 +162,67 @@ export default function ProblemsPage() {
                 </div>
                 <button
                     data-testid="random-problem-button"
-                    onClick={() =>
-                        items.length &&
-                        navigate(
-                            `/problems/${items[Math.floor(Math.random() * items.length)].slug}`
-                        )
-                    }
-                    className="flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 rounded-full border hover:border-primary hover:text-primary transition-colors self-start shrink-0"
+                    onClick={pickRandom}
+                    disabled={!items.length}
+                    className="flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 rounded-full border hover:border-primary hover:text-primary transition-colors self-start shrink-0 disabled:opacity-50"
                 >
                     <Shuffle className="w-4 h-4" />
                     <span>Pick one</span>
                 </button>
             </div>
 
-            {/* ── Stats ────────────────────────────────── */}
+            {/* ═══ Stats ═══ */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
                 <StatCard label="Easy" solved={count("Easy", true)} total={count("Easy")} cls="text-easy" delay={60} />
                 <StatCard label="Medium" solved={count("Medium", true)} total={count("Medium")} cls="text-medium" delay={120} />
                 <StatCard label="Hard" solved={count("Hard", true)} total={count("Hard")} cls="text-hard" delay={180} />
             </div>
 
+            {/* ═══ Daily + ForYou (both self-hide for guests appropriately) ═══ */}
             <DailyChallenge />
             <ForYou />
 
-            {/* ── Tag filter pills ─────────────────────── */}
-            <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
-                {tags.map((t) => (
-                    <button
-                        key={t}
-                        onClick={() => setTag(tag === t ? null : t)}
-                        data-testid={`filter-tag-badge-${t.toLowerCase().replace(/\s+/g, "-")}`}
-                        className={`text-[10px] sm:text-xs px-2 sm:px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${
-                            tag === t
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "text-muted-foreground hover:text-foreground hover:border-foreground/30"
-                        }`}
-                    >
-                        {t}
-                    </button>
-                ))}
-            </div>
+            {/* ═══ Tag pills ═══ */}
+            {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                    {tags.map((t) => (
+                        <button
+                            key={t}
+                            onClick={() => setTag(tag === t ? null : t)}
+                            data-testid={`filter-tag-badge-${t.toLowerCase().replace(/\s+/g, "-")}`}
+                            className={`text-[10px] sm:text-xs px-2 sm:px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                                tag === t
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                            }`}
+                        >
+                            {t}
+                        </button>
+                    ))}
+                </div>
+            )}
 
-            {/* ── Filters ──────────────────────────────── */}
+            {/* ═══ Filters ═══ */}
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 mb-3 sm:mb-4">
                 <div className="relative flex-1 min-w-0">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                     <input
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         placeholder="Search questions"
                         data-testid="problems-search-input"
-                        className="w-full h-10 pl-9 pr-3 rounded-lg bg-secondary border border-transparent focus:border-primary outline-none text-sm transition-colors"
+                        className="w-full h-10 pl-9 pr-9 rounded-lg bg-secondary border border-transparent focus:border-primary outline-none text-sm transition-colors"
                     />
+                    {q && (
+                        <button
+                            onClick={() => setQ("")}
+                            data-testid="problems-search-clear"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background"
+                            aria-label="Clear search"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3">
                     <Select value={diff} onValueChange={setDiff}>
@@ -170,13 +244,17 @@ export default function ProblemsPage() {
                         <SelectContent>
                             <SelectItem value="all">Company</SelectItem>
                             {companies.map((c) => (
-                                <SelectItem key={c} value={c} data-testid={`company-option-${c.toLowerCase().replace(/\s+/g, "-")}`}>
+                                <SelectItem
+                                    key={c}
+                                    value={c}
+                                    data-testid={`company-option-${c.toLowerCase().replace(/\s+/g, "-")}`}
+                                >
                                     {c}
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
-                    <Select value={status} onValueChange={setStatus}>
+                    <Select value={status} onValueChange={setStatus} disabled={isGuest}>
                         <SelectTrigger className="h-10 text-xs sm:w-32" data-testid="filter-status-select">
                             <SelectValue />
                         </SelectTrigger>
@@ -191,9 +269,25 @@ export default function ProblemsPage() {
                 </div>
             </div>
 
-            {/* ── Problems Table ───────────────────────── */}
+            {/* ═══ Active filter summary + clear ═══ */}
+            {hasActiveFilters && (
+                <div className="flex items-center gap-2 mb-3 text-[11px] sm:text-xs text-muted-foreground">
+                    <span>
+                        {rows.length} of {items.length} shown
+                    </span>
+                    <button
+                        onClick={clearFilters}
+                        className="ml-auto flex items-center gap-1 px-2 py-1 rounded-md hover:bg-secondary hover:text-foreground transition-colors"
+                        data-testid="problems-clear-filters"
+                    >
+                        <X className="w-3 h-3" />
+                        Clear filters
+                    </button>
+                </div>
+            )}
+
+            {/* ═══ Problems table ═══ */}
             <div className="rounded-xl border overflow-hidden bg-card" data-testid="problems-table">
-                {/* Column headers — visible on sm+ */}
                 <div className="hidden sm:grid sm:grid-cols-[56px_1fr_260px_110px_90px] px-4 h-10 items-center text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b bg-secondary/30">
                     <span>Status</span>
                     <span>Title</span>
@@ -204,7 +298,7 @@ export default function ProblemsPage() {
 
                 {rows.map((p, i) => {
                     const title = p.title || "Untitled";
-                    const acceptance = p.acceptance ?? 0;
+                    const acceptance = typeof p.acceptance === "number" ? p.acceptance : 0;
                     return (
                         <Link
                             to={`/problems/${p.slug}`}
@@ -216,9 +310,9 @@ export default function ProblemsPage() {
                         >
                             <span className="shrink-0">
                                 {p.status === "solved" ? (
-                                    <CheckCircle2 className="w-4 h-4 text-easy" />
+                                    <CheckCircle2 className="w-4 h-4 text-easy" aria-label="Solved" />
                                 ) : p.status === "attempted" ? (
-                                    <CircleDashed className="w-4 h-4 text-medium" />
+                                    <CircleDashed className="w-4 h-4 text-medium" aria-label="Attempted" />
                                 ) : null}
                             </span>
                             <span className="min-w-0">
@@ -251,9 +345,9 @@ export default function ProblemsPage() {
                                 {acceptance.toFixed(1)}%
                             </span>
                             <span
-                                className={`font-semibold text-right sm:text-left ${diffCls[p.difficulty]}`}
+                                className={`font-semibold text-right sm:text-left ${diffCls[p.difficulty] || ""}`}
                             >
-                                {p.difficulty === "Medium" ? "Med." : p.difficulty}
+                                {p.difficulty === "Medium" ? "Med." : p.difficulty || "—"}
                             </span>
                         </Link>
                     );
@@ -261,10 +355,26 @@ export default function ProblemsPage() {
 
                 {!rows.length && (
                     <div
-                        className="p-6 sm:p-10 text-center text-muted-foreground text-xs sm:text-sm"
+                        className="p-6 sm:p-10 text-center text-xs sm:text-sm"
                         data-testid="problems-empty"
                     >
-                        No problems match your filters.
+                        {items.length === 0 ? (
+                            <p className="text-muted-foreground">
+                                No problems available yet. Check back soon.
+                            </p>
+                        ) : (
+                            <>
+                                <p className="text-muted-foreground mb-3">
+                                    No problems match your filters.
+                                </p>
+                                <button
+                                    onClick={clearFilters}
+                                    className="text-primary font-semibold hover:underline text-xs sm:text-sm"
+                                >
+                                    Clear all filters
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>

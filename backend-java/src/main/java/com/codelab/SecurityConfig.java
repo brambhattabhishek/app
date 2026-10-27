@@ -1,4 +1,5 @@
 package com.codelab;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,7 +35,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // ---- public ----
+
+                        // ═══════════════════════════════════════════════════
+                        //  ALWAYS PUBLIC (preflight + static + SPA shell)
+                        // ═══════════════════════════════════════════════════
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/",
@@ -44,18 +48,45 @@ public class SecurityConfig {
                                 "/static/**",
                                 "/assets/**",
                                 "/og-image.png",
-                                "/api/auth/**",
-                                "/api/public/**",
-                                "/api/problems/**",
-                                "/api/problems2/**",
-                                "/api/problems_meta/**",
-                                "/api/health"
+                                "/robots.txt",
+                                "/sitemap.xml",
+                                "/Loading.gif",
+                                "/error"
                         ).permitAll()
 
-                        // ---- admin-only ----
+                        // ═══════════════════════════════════════════════════
+                        //  GUEST-ACCESSIBLE API  (login optional)
+                        //  ─ Auth flows, browse, run code, daily pick,
+                        //    companies, avatar images, analytics events
+                        // ═══════════════════════════════════════════════════
+                        .requestMatchers(
+                                "/api/auth/**",              // login/register/OAuth/OTP/providers
+                                "/api/public/**",            // any future public helpers
+                                "/api/health",               // health check
+                                "/api/problems",             // browse problems (list)
+                                "/api/problems/**",          // problem detail (read-only)
+                                "/api/problems2/**",         // legacy read-only mirror
+                                "/api/problems_meta/**",     // legacy read-only mirror
+                                "/api/companies",            // companies list
+                                "/api/companies/**",         // company detail
+                                "/api/daily",                // guest → global pick; user → personalised
+                                "/api/run",                  // ★ guest can RUN code (no submit)
+                                "/api/track",                // analytics events from guests too
+                                "/api/avatars/**"            // public avatar image serving
+                        ).permitAll()
+
+                        // ═══════════════════════════════════════════════════
+                        //  ADMIN-ONLY
+                        // ═══════════════════════════════════════════════════
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        // ---- everything else needs login ----
+                        // ═══════════════════════════════════════════════════
+                        //  LOGIN REQUIRED  (everything else)
+                        //  ─ /api/submit, /api/recommendations, /api/profile,
+                        //    /api/profile/avatar, /api/submissions,
+                        //    /api/auth/admin/**, /api/auth/me  (also fine — auth/** is public
+                        //    but controller itself uses auth.require for /me)
+                        // ═══════════════════════════════════════════════════
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
@@ -63,12 +94,14 @@ public class SecurityConfig {
                         .authenticationEntryPoint((req, res, e) -> {
                             res.setStatus(401);
                             res.setContentType("application/json");
-                            res.getWriter().write("{\"error\":\"Unauthorized\"}");
+                            res.setCharacterEncoding("UTF-8");
+                            res.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Please sign in to continue\"}");
                         })
                         .accessDeniedHandler((req, res, e) -> {
                             res.setStatus(403);
                             res.setContentType("application/json");
-                            res.getWriter().write("{\"error\":\"Forbidden\"}");
+                            res.setCharacterEncoding("UTF-8");
+                            res.getWriter().write("{\"error\":\"Forbidden\",\"message\":\"You don't have permission for this action\"}");
                         })
                 );
 
@@ -88,10 +121,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
+        // allowCredentials=true ke saath AllowedOrigins "*" allowed nahi hota,
+        // isliye AllowedOriginPatterns use karte hain — ye sab origins allow karta hai
+        // aur credentials bhi bhej sakta hai (Bearer token ke liye zaroori).
         cfg.setAllowedOriginPatterns(List.of("*"));
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
-        cfg.setExposedHeaders(List.of("Authorization"));
+        cfg.setExposedHeaders(List.of("Authorization", "Content-Type"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
 

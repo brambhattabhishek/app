@@ -1,8 +1,16 @@
+/* ═══════════════════════════════════════════════════════════════
+   Fonts — preconnect hints handled in index.html (better LCP)
+   Kept @import here as fallback for environments without HTML access
+   ═══════════════════════════════════════════════════════════════ */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════
+   Theme tokens
+   ═══════════════════════════════════════════════════════════════ */
 @layer base {
   :root {
     --background: 0 0% 98%;
@@ -25,11 +33,18 @@
     --input: 214 32% 89%;
     --ring: 33 100% 44%;
     --radius: 0.6rem;
-    --easy: #029E8A;
-    --medium: #D99B00;
-    --hard: #E11D48;
+
+    --easy: #029e8a;
+    --medium: #d99b00;
+    --hard: #e11d48;
     --console: 220 14% 97%;
+
+    /* Extra tokens used inline across the app */
+    --success: #10b981;
+    --warning: #f59e0b;
+    --info: #3b82f6;
   }
+
   .dark {
     --background: 240 9% 4%;
     --foreground: 220 14% 96%;
@@ -50,50 +65,308 @@
     --border: 240 16% 18%;
     --input: 240 16% 18%;
     --ring: 36 100% 54%;
-    --easy: #00B8A3;
-    --medium: #FFC01E;
-    --hard: #FF375F;
+
+    --easy: #00b8a3;
+    --medium: #ffc01e;
+    --hard: #ff375f;
     --console: 240 17% 6%;
+
+    --success: #34d399;
+    --warning: #fbbf24;
+    --info: #60a5fa;
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Base reset + typography
+   ═══════════════════════════════════════════════════════════════ */
 @layer base {
-  * { @apply border-border; }
+  * {
+    @apply border-border;
+  }
+
+  html {
+    /* Prevent layout shift when scrollbar appears */
+    scrollbar-gutter: stable;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
-    font-family: 'Manrope', sans-serif;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Prevent horizontal overflow from animation blur ellipses */
+    overflow-x: hidden;
   }
-  h1, h2, h3, h4, .font-heading { font-family: 'Outfit', sans-serif; }
-  code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
-  ::selection { background: hsl(var(--primary) / 0.3); }
+
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+  }
+
+  code, pre, .font-mono, kbd, samp {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+  }
+
+  /* Focus visible outline — better a11y */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Monospace numbers for counters, stats, timers */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-.text-easy { color: var(--easy); }
+/* ═══════════════════════════════════════════════════════════════
+   Difficulty color utilities
+   ═══════════════════════════════════════════════════════════════ */
+.text-easy   { color: var(--easy); }
 .text-medium { color: var(--medium); }
-.text-hard { color: var(--hard); }
-.bg-easy { background-color: var(--easy); }
-.bg-medium { background-color: var(--medium); }
-.bg-hard { background-color: var(--hard); }
-.bg-console { background-color: hsl(var(--console)); }
+.text-hard   { color: var(--hard); }
+.bg-easy     { background-color: var(--easy); }
+.bg-medium   { background-color: var(--medium); }
+.bg-hard     { background-color: var(--hard); }
+.bg-console  { background-color: hsl(var(--console)); }
 
-.prose-lc p { margin: 0 0 0.9rem; line-height: 1.75; }
-.prose-lc ol { list-style: decimal; padding-left: 1.4rem; margin-bottom: 0.9rem; }
-.prose-lc li { margin: 0.25rem 0; }
+/* Success/Warning/Info — additional inline-used tokens */
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-info    { color: var(--info); }
+.bg-success   { background-color: var(--success); }
+.bg-warning   { background-color: var(--warning); }
+.bg-info      { background-color: var(--info); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Prose (LeetCode-style problem description rendering)
+   ═══════════════════════════════════════════════════════════════ */
+.prose-lc p {
+  margin: 0 0 0.9rem;
+  line-height: 1.75;
+}
+.prose-lc ol {
+  list-style: decimal;
+  padding-left: 1.4rem;
+  margin-bottom: 0.9rem;
+}
+.prose-lc ul {
+  list-style: disc;
+  padding-left: 1.4rem;
+  margin-bottom: 0.9rem;
+}
+.prose-lc li {
+  margin: 0.25rem 0;
+}
+.prose-lc strong {
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+.prose-lc em {
+  font-style: italic;
+}
 .prose-lc code {
-  font-family: 'JetBrains Mono', monospace; font-size: 0.82em;
-  background: hsl(var(--secondary)); border: 1px solid hsl(var(--border));
-  padding: 0.1rem 0.35rem; border-radius: 0.35rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82em;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  word-break: break-word;
+}
+.prose-lc pre {
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.9rem;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+.prose-lc pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.prose-lc sup {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+}
+.prose-lc sub {
+  font-size: 0.75em;
+  vertical-align: sub;
+  line-height: 0;
+}
+.prose-lc img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Grain texture overlay (subtle background pattern)
+   ═══════════════════════════════════════════════════════════════ */
 .grain::before {
-  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.035;
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise 0.5s cubic-bezier(.2,.8,.2,1) both; }
+.dark .grain::before {
+  opacity: 0.05;
+}
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
+/* ═══════════════════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 2s linear infinite;
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Custom scrollbar
+   ═══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+/* Hide scrollbar when explicitly requested (used on horizontal scrolls) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Line-clamp utilities (if not in Tailwind config)
+   Tailwind v3+ includes line-clamp by default — kept here as safety
+   ═══════════════════════════════════════════════════════════════ */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Monaco Editor overrides — match theme tokens
+   ═══════════════════════════════════════════════════════════════ */
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .margin {
+  background-color: hsl(var(--card)) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Utility: gradient text (used in Hero on AuthPage)
+   ═══════════════════════════════════════════════════════════════ */
+.text-gradient {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--hard)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Utility: subtle border-glow (used on daily challenge)
+   ═══════════════════════════════════════════════════════════════ */
+.border-glow {
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4),
+  0 8px 24px -12px hsl(var(--primary) / 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Dark mode: force consistent color-scheme for native inputs
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
