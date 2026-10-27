@@ -155,7 +155,55 @@ public class ApiController {
     }
 
     @GetMapping("/health")
-    public Map<String, Object> health() { return Map.of("ok", true, "backend", "java-spring-boot"); }
+    public Map<String, Object> health() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("backend", "java-spring-boot");
+        out.put("timestamp", new Date().toString());
+
+        // ── DEBUG — remove after diagnosis ──
+        try {
+            long problemsCount = mongo.getCollection("problems").countDocuments();
+            long metaCount = mongo.getCollection("problem_meta").countDocuments();
+            out.put("debug_problemsCount", problemsCount);
+            out.put("debug_metaCount", metaCount);
+
+            // Sample first meta doc
+            Document sample = mongo.getCollection("problem_meta").find().first();
+            if (sample != null) {
+                Map<String, Object> sm = new LinkedHashMap<>();
+                sm.put("_id", sample.get("_id"));
+                sm.put("slug", sample.get("slug"));
+                Object c = sample.get("companies");
+                sm.put("companies_present", c != null);
+                sm.put("companies_class", c == null ? "NULL" : c.getClass().getName());
+                sm.put("companies_isList", c instanceof List<?>);
+                if (c instanceof List<?> l) {
+                    sm.put("companies_count", l.size());
+                    sm.put("companies_sample", l.stream().limit(3).map(Object::toString).toList());
+                }
+                out.put("debug_metaSample", sm);
+            } else {
+                out.put("debug_metaSample", "NO META DOCS FOUND");
+            }
+
+            // Run companyToSlugs
+            Map<String, Set<String>> c2s = companyToSlugs();
+            out.put("debug_companiesMapSize", c2s.size());
+            out.put("debug_companiesMapSample", c2s.entrySet().stream().limit(5)
+                    .map(e -> Map.of("company", e.getKey(), "problemCount", e.getValue().size()))
+                    .toList());
+
+            // Also check what auth header we're getting
+            out.put("debug_validSlugs_count", mongo.getCollection("problems")
+                    .find(new Document("slug", 1)).into(new ArrayList<>()).size());
+
+        } catch (Exception e) {
+            out.put("debug_error", e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+
+        return out;
+    }
 
     // ═══════════════════════════════════════════════════════════════
     //  PROBLEMS — guest browsable
