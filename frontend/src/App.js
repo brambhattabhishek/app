@@ -1,5 +1,5 @@
 import "@/App.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -26,7 +26,7 @@ import { getActiveApiRequests, subscribeToApiLoading } from "@/lib/api";
 import { initAnalytics, track } from "@/lib/analytics";
 
 // ═══════════════════════════════════════════════════════════════
-//  QueryClient — module-level so re-renders don't recreate
+//  Query client — module scope so HMR / re-mounts don't reset it
 // ═══════════════════════════════════════════════════════════════
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,90 +41,92 @@ const queryClient = new QueryClient({
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  PageTracker — GA init + page_view tracking
+//  PageTracker — GA init + page_view per route
 // ═══════════════════════════════════════════════════════════════
 function PageTracker() {
   const { pathname } = useLocation();
-  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    if (initialized) return;
-    try {
-      initAnalytics();
-    } catch (e) {
-      console.warn("[analytics] init failed:", e?.message);
-    }
-    setInitialized(true);
-  }, [initialized]);
+    initAnalytics();
+  }, []);
 
   useEffect(() => {
-    try {
-      track("page_view", { page_path: pathname });
-    } catch {
-      /* never break the app for analytics */
-    }
+    if (/^\/(auth\/|login)/.test(pathname)) return;
+    track("page_view", { page_path: pathname });
   }, [pathname]);
 
   return null;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  GlobalLoadingOverlay — shows only on cold start with active reqs
+//  GlobalLoadingOverlay — controlled by API request count
+//
+//  Rules:
+//   • Show whenever ANY API request is in flight
+//   • Stay visible until requests drop to 0 AND ~600ms idle
+//   • Hard timeout of 25 seconds (never blocks forever)
+//   • Doesn't re-show during route changes (SPA navigations are fast)
 // ═══════════════════════════════════════════════════════════════
 function GlobalLoadingOverlay() {
-  const [visible, setVisible] = useState(() => getActiveApiRequests() > 0);
+  const [visible, setVisible] = useState(true);
+  const finishedRef = useRef(false);
+  const idleTimerRef = useRef(null);
+  const maxTimerRef = useRef(null);
 
   useEffect(() => {
-    let finished = false;
-    let idleTimer;
-    let maxTimer;
-
-    const hide = () => {
-      if (finished) return;
-      finished = true;
+    const finish = () => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
       setVisible(false);
-      clearTimeout(idleTimer);
-      clearTimeout(maxTimer);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
     };
 
-    const hideWhenIdle = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        if (getActiveApiRequests() === 0) hide();
-      }, 700);
+    const hideWhenIdle = (delay = 600) => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => {
+        if (getActiveApiRequests() === 0) finish();
+      }, delay);
     };
 
     const unsubscribe = subscribeToApiLoading((count) => {
-      if (finished) return;
+      if (finishedRef.current) return;
       if (count > 0) {
-        clearTimeout(idleTimer);
-        setVisible(true);
+        // New request came in — cancel hide
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current);
+          idleTimerRef.current = null;
+        }
       } else {
         hideWhenIdle();
       }
     });
 
-    if (getActiveApiRequests() === 0) hideWhenIdle();
+    // If already idle at mount, hide after short delay
+    if (getActiveApiRequests() === 0) {
+      hideWhenIdle(400);
+    }
 
-    maxTimer = setTimeout(hide, 15000);
+    // Hard cap — never block the user for more than 25s
+    maxTimerRef.current = setTimeout(finish, 25_000);
 
     return () => {
-      clearTimeout(idleTimer);
-      clearTimeout(maxTimer);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
       unsubscribe();
     };
   }, []);
 
-  return visible ? <LoadingScreen /> : null;
+  // Once `visible` flips false, LoadingScreen fades out and unmounts on next render
+  return <LoadingScreen visible={visible} />;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AppRouter — routes + hash-based OAuth interception
+//  Router
 // ═══════════════════════════════════════════════════════════════
 function AppRouter() {
   const location = useLocation();
 
-  // Google OAuth return — session_id comes in hash
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
@@ -133,7 +135,6 @@ function AppRouter() {
       <div className="min-h-screen grain">
         <PageTracker />
         <Navbar />
-
         <Routes>
           <Route path="/" element={<ProblemsPage />} />
           <Route path="/problems" element={<Navigate to="/" replace />} />
@@ -144,8 +145,6 @@ function AppRouter() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/companies" element={<CompaniesPage />} />
           <Route path="/companies/:name" element={<CompanyPage />} />
-
-          {/* Fallback — unknown route → home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
@@ -157,11 +156,7 @@ function AppRouter() {
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
   return (
-      <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-      >
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <BrowserRouter>
