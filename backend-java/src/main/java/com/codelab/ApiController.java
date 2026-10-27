@@ -674,13 +674,16 @@ public class ApiController {
             }
         }
 
-        List<String> diffOrder = List.of("Easy", "Medium", "Hard");
-        list.sort(Comparator
-                .comparingInt((Map<String, Object> m) -> {
-                    int i = diffOrder.indexOf((String) m.get("difficulty"));
-                    return i < 0 ? 99 : i;
-                })
-                .thenComparing(m -> String.valueOf(m.get("title"))));
+        // ★★★ FIXED SORT — by numeric problem id (1, 2, 3, ...) ★★★
+        list.sort(Comparator.comparingInt((Map<String, Object> m) -> {
+            Object idObj = m.get("id");
+            if (idObj instanceof Number) return ((Number) idObj).intValue();
+            try {
+                return Integer.parseInt(String.valueOf(idObj));
+            } catch (Exception e) {
+                return Integer.MAX_VALUE; // missing/invalid id → end of list
+            }
+        }));
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("name", canonicalName);
