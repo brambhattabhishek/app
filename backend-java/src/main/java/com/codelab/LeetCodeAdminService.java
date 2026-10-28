@@ -4,14 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.UpdateOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -30,8 +26,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.mongodb.client.model.Filters.eq;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -48,7 +42,6 @@ public class LeetCodeAdminService {
     private final ProblemMetaRepository metaRepo;
     private final ResourceLoader        resourceLoader;
     private final CompanyImportService  companyImportService;
-    private final MongoTemplate         mongo;
 
     private volatile String sessionCookie = "";
     private final AtomicBoolean fetchingAll = new AtomicBoolean(false);
@@ -71,6 +64,7 @@ public class LeetCodeAdminService {
             }
         } catch (Exception ignored) {}
 
+        // Fallback: data/ directory (ephemeral, but MongoDB is primary source)
         Path fallback = Paths.get("data", filename);
         Files.createDirectories(fallback.getParent());
         if (!Files.exists(fallback)) {
@@ -80,75 +74,7 @@ public class LeetCodeAdminService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  ★ syncCompaniesForProblem — auto-detect + upsert meta
-    //  Called after problem save. Handles:
-    //   • Full 300+ CSV scan for companies
-    //   • Meta doc creation if missing
-    //   • Company merge if meta exists (no data loss)
-    // ═══════════════════════════════════════════════════════════════
-    private void syncCompaniesForProblem(String slug, int num, List<String> hints) {
-        if (slug == null || slug.isBlank()) return;
-
-        // 1. Detect companies from all 300+ CSVs
-        List<String> detected = new ArrayList<>();
-        try {
-            detected = companyImportService.findCompaniesForProblem(slug);
-            log.info("✓ Auto-detected {} companies for #{} ({})", detected.size(), num, slug);
-        } catch (Exception e) {
-            log.warn("Company detection failed for #{} ({}): {}", num, slug, e.getMessage());
-        }
-
-        // 2. Upsert problem_meta — raw driver, bypasses Spring Data quirks
-        MongoCollection<Document> metaCol = mongo.getCollection("problem_meta");
-        Document existing = metaCol.find(eq("slug", slug)).first();
-
-        if (existing != null) {
-            // Merge — keep existing companies, add new ones (case-insensitive dedupe)
-            LinkedHashMap<String, String> byLower = new LinkedHashMap<>();
-            Object ec = existing.get("companies");
-            if (ec instanceof List<?> list) {
-                for (Object c : list) {
-                    if (c == null) continue;
-                    String cs = c.toString().trim();
-                    if (!cs.isEmpty()) byLower.putIfAbsent(cs.toLowerCase(), cs);
-                }
-            }
-            for (String c : detected) {
-                if (c == null) continue;
-                String cs = c.trim();
-                if (!cs.isEmpty()) byLower.putIfAbsent(cs.toLowerCase(), cs);
-            }
-
-            List<String> merged = new ArrayList<>(byLower.values());
-            merged.sort(String.CASE_INSENSITIVE_ORDER);
-
-            metaCol.updateOne(
-                    eq("slug", slug),
-                    new Document("$set", new Document("companies", merged)),
-                    new UpdateOptions().upsert(false)
-            );
-            log.info("✓ Updated meta for #{} with {} companies", num, merged.size());
-
-        } else {
-            // Create fresh meta document
-            List<String> sorted = new ArrayList<>(detected);
-            sorted.sort(String.CASE_INSENSITIVE_ORDER);
-
-            Document newMeta = new Document()
-                    .append("_id", num)
-                    .append("slug", slug)
-                    .append("companies", sorted)
-                    .append("hints", hints != null ? hints : List.of())
-                    .append("edgeCases", List.of())
-                    .append("explanation", "")
-                    .append("_class", "com.codelab.ProblemMeta");
-            metaCol.insertOne(newMeta);
-            log.info("✓ Created meta for #{} ({}) with {} companies", num, slug, sorted.size());
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  Add problems (single or bulk) — with auto company-detect
+    //  Add problems (single or bulk) — with company auto-detect
     // ═══════════════════════════════════════════════════════════════
     public synchronized List<Integer> addProblems(String input) throws Exception {
         List<Integer> added = new ArrayList<>();
@@ -187,17 +113,28 @@ public class LeetCodeAdminService {
                     continue;
                 }
 
-                Problem problem = toProblem(num, d);
+                Problem problem  = toProblem(num, d);
                 problem.setAcceptance(info.acceptance);
                 ProblemMeta meta = toMeta(num, d);
 
-                // ═══════ Save problem first ═══════
+                // ═══════ Auto-detect companies ═══════
+                try {
+                    List<String> companies = companyImportService.findCompaniesForProblem(slug);
+                    if (!companies.isEmpty()) {
+                        meta.setCompanies(companies);
+                        log.info("✓ Auto-detected {} companies for #{}: {}", companies.size(), num, companies);
+                    } else {
+                        log.info("No companies found for #{} ({})", num, slug);
+                    }
+                } catch (Exception e) {
+                    log.warn("Company auto-detect failed for #{}: {}", num, e.getMessage());
+                }
+
+                // ═══════ Save to MongoDB (PRIMARY) ═══════
                 problemRepo.save(problem);
+                metaRepo.save(meta);
 
-                // ═══════ Auto-detect + upsert meta (companies merged) ═══════
-                syncCompaniesForProblem(slug, num, meta.getHints());
-
-                // ═══════ Mirror to JSON (best-effort) ═══════
+                // ═══════ Mirror to JSON (SECONDARY — may fail on ephemeral FS) ═══════
                 try {
                     replaceOrAdd(p1Json, num, problemToJson(problem));
                     replaceOrAdd(p2Json, num, problemMetaToJson2(problem, meta));
@@ -207,7 +144,11 @@ public class LeetCodeAdminService {
                 }
 
                 added.add(num);
-                log.info("✓ Saved #{} {}", num, problem.getTitle());
+                log.info("✓ Saved #{} {} (fn={}, params={}, samples={}, acceptance={}%, companies={}, constraints={}, hints={})",
+                        num, problem.getTitle(), problem.getFn(),
+                        problem.getParams().size(), problem.getSampleTests().size(),
+                        problem.getAcceptance(), meta.getCompanies().size(),
+                        problem.getConstraints().size(), meta.getHints().size());
 
                 if (input.split("\\s+|,").length > added.size()) {
                     Thread.sleep(200);
@@ -220,6 +161,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // Best-effort JSON write
         try { write(p1Path, p1Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
         try { write(p2Path, p2Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
         try { write(pmPath, metaJson); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
@@ -264,19 +206,31 @@ public class LeetCodeAdminService {
                     JsonNode d = fetchQuestionDetail(slug);
                     if (d == null || d.isMissingNode() || d.isNull()) continue;
 
-                    Problem problem = toProblem(num, d);
+                    Problem problem  = toProblem(num, d);
                     problem.setAcceptance(acceptance);
                     ProblemMeta meta = toMeta(num, d);
 
+                    try {
+                        List<String> companies = companyImportService.findCompaniesForProblem(slug);
+                        if (!companies.isEmpty()) {
+                            meta.setCompanies(companies);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Company detect failed for {}: {}", slug, e.getMessage());
+                    }
+
                     problemRepo.save(problem);
-                    syncCompaniesForProblem(slug, num, meta.getHints());
+                    metaRepo.save(meta);
 
                     p1Json.add(problemToJson(problem));
                     p2Json.add(problemMetaToJson2(problem, meta));
                     metaJson.set(String.valueOf(num), metaToJson(meta));
 
                     count++;
-                    log.info("✓ [{}] {} {}", count, num, slug);
+                    log.info("✓ [{}] {} {} (samples: {}, acc: {}%, companies: {}, constraints: {}, hints: {})",
+                            count, num, slug, problem.getSampleTests().size(),
+                            acceptance, meta.getCompanies().size(),
+                            problem.getConstraints().size(), meta.getHints().size());
                     Thread.sleep(250);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -294,74 +248,6 @@ public class LeetCodeAdminService {
         } finally {
             fetchingAll.set(false);
         }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  ★ Refresh companies for specific slugs — admin endpoint helper
-    // ═══════════════════════════════════════════════════════════════
-    public List<String> resolveSlugsForNumbers(String numbersInput) {
-        List<String> slugs = new ArrayList<>();
-        if (numbersInput == null) return slugs;
-
-        for (String token : numbersInput.replace(",", " ").split("\\s+")) {
-            if (token.isBlank()) continue;
-            try {
-                int num = Integer.parseInt(token.trim());
-                Document p = mongo.getCollection("problems").find(eq("_id", num)).first();
-                if (p != null) {
-                    String slug = p.getString("slug");
-                    if (slug != null) slugs.add(slug);
-                }
-            } catch (Exception ignored) {}
-        }
-        return slugs;
-    }
-
-    public Map<String, Object> refreshCompaniesForSlugs(List<String> slugs) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        int updated = 0;
-        List<String> errors = new ArrayList<>();
-        MongoCollection<Document> metaCol = mongo.getCollection("problem_meta");
-
-        for (String slug : slugs) {
-            try {
-                List<String> companies = companyImportService.findCompaniesForProblem(slug);
-
-                if (companies.isEmpty()) {
-                    result.put(slug, Map.of("status", "no companies found", "count", 0));
-                    continue;
-                }
-
-                metaCol.updateOne(
-                        eq("slug", slug),
-                        new Document("$set", new Document("companies", companies)),
-                        new UpdateOptions().upsert(false)
-                );
-                result.put(slug, Map.of("status", "updated", "count", companies.size()));
-                updated++;
-            } catch (Exception e) {
-                result.put(slug, Map.of("status", "error", "error", e.getMessage()));
-                errors.add(slug + ": " + e.getMessage());
-            }
-        }
-
-        result.put("_summary", Map.of(
-                "requested", slugs.size(),
-                "updated", updated,
-                "errors", errors
-        ));
-        return result;
-    }
-
-    public Map<String, Object> refreshCompaniesForAll() {
-        List<String> slugs = new ArrayList<>();
-        for (Document p : mongo.getCollection("problems").find()) {
-            String s = p.getString("slug");
-            if (s != null) slugs.add(s);
-        }
-
-        log.info("[refreshCompaniesForAll] Refreshing {} problems", slugs.size());
-        return refreshCompaniesForSlugs(slugs);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -505,6 +391,7 @@ public class LeetCodeAdminService {
         List<Problem.SampleTest> sampleTests = new ArrayList<>();
         List<String> constraints = new ArrayList<>();
 
+        // ───── Parse signature from codeSnippets ─────
         JsonNode snippets = d.path("codeSnippets");
         if (snippets.isArray() && snippets.size() > 0) {
             JsonNode jsSnippet = null;
@@ -546,6 +433,7 @@ public class LeetCodeAdminService {
 
         String description = d.path("content").asText("");
 
+        // ───── Parse constraints from description HTML ─────
         if (!description.isEmpty()) {
             Pattern constraintsPattern = Pattern.compile(
                     "Constraints:\\s*</strong>(.*?)(?:<strong>|$)",
@@ -554,6 +442,7 @@ public class LeetCodeAdminService {
             Matcher cm = constraintsPattern.matcher(description);
             if (cm.find()) {
                 String block = cm.group(1);
+
                 Pattern liPattern = Pattern.compile("<li>(.*?)</li>", Pattern.DOTALL);
                 Matcher lm = liPattern.matcher(block);
                 while (lm.find()) {
@@ -570,11 +459,15 @@ public class LeetCodeAdminService {
                             .replace("&quot;", "\"")
                             .replaceAll("\\s+", " ")
                             .trim();
-                    if (!c.isEmpty() && c.length() < 500) constraints.add(c);
+
+                    if (!c.isEmpty() && c.length() < 500) {
+                        constraints.add(c);
+                    }
                 }
             }
         }
 
+        // ───── Parse expected outputs ─────
         List<String> expectedOutputs = new ArrayList<>();
         if (!description.isEmpty()) {
             String text = description
@@ -599,6 +492,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // ───── Parse sample tests ─────
         String exampleTestcases = d.path("exampleTestcases").asText("");
         if (!exampleTestcases.isEmpty()) {
             String[] lines = exampleTestcases.split("\n");
@@ -612,16 +506,22 @@ public class LeetCodeAdminService {
                         if (j > 0) input.append("\n");
                         input.append(lines[i + j].trim());
                     }
-                    String expected = outIdx < expectedOutputs.size() ? expectedOutputs.get(outIdx) : "";
+
+                    String expected = outIdx < expectedOutputs.size()
+                            ? expectedOutputs.get(outIdx)
+                            : "";
+
                     sampleTests.add(Problem.SampleTest.builder()
                             .input(input.toString())
                             .expected(expected)
                             .build());
+
                     outIdx++;
                 }
             }
         }
 
+        // ───── Fallback: sampleTestCase ─────
         if (sampleTests.isEmpty()) {
             String sampleInput = d.path("sampleTestCase").asText("");
             if (!sampleInput.isEmpty() && !params.isEmpty()) {
@@ -666,9 +566,11 @@ public class LeetCodeAdminService {
                 .build();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  Delete problems by number OR slug
-    // ═══════════════════════════════════════════════════════════════
+    /**
+     * ★ Delete one or more problems by number OR slug.
+     * @param input space/comma separated numbers (1 2 3) OR slugs (two-sum, valid-parentheses)
+     * @return Map with deleted (list), notFound (list), errors (list)
+     */
     public synchronized Map<String, Object> deleteProblems(String input) throws Exception {
         Map<String, Object> result = new LinkedHashMap<>();
         List<Integer> deletedNumbers = new ArrayList<>();
@@ -699,6 +601,7 @@ public class LeetCodeAdminService {
                 int targetId = -1;
                 String targetSlug = null;
 
+                // ★ Try numeric first
                 try {
                     int num = Integer.parseInt(token);
                     SlugInfo info = slugForNumber(num);
@@ -707,9 +610,11 @@ public class LeetCodeAdminService {
                         targetSlug = info.slug;
                     }
                 } catch (NumberFormatException ignored) {
+                    // Not numeric → treat as slug
                     targetSlug = token.toLowerCase();
                 }
 
+                // ★ If slug provided directly, find its ID
                 if (targetId == -1 && targetSlug != null) {
                     var existing = problemRepo.findBySlug(targetSlug);
                     if (existing.isPresent()) {
@@ -723,16 +628,18 @@ public class LeetCodeAdminService {
                     continue;
                 }
 
+                // ═══════ Delete from MongoDB (primary) ═══════
                 problemRepo.deleteById(targetId);
                 metaRepo.deleteById(targetId);
 
+                // ═══════ Delete from JSON (secondary, best-effort) ═══════
                 removeFromArray(p1Json, targetId);
                 removeFromArray(p2Json, targetId);
                 metaJson.remove(String.valueOf(targetId));
 
                 deletedNumbers.add(targetId);
                 deletedSlugs.add(targetSlug);
-                log.info("🗑️ Deleted #{} {}", targetId, targetSlug);
+                log.info("🗑️ Deleted #{} {} (from MongoDB + JSON)", targetId, targetSlug);
 
             } catch (Exception e) {
                 log.error("✗ Failed to delete '{}': {}", token, e.getMessage());
@@ -740,6 +647,7 @@ public class LeetCodeAdminService {
             }
         }
 
+        // Write JSON files (best-effort)
         try { write(p1Path, p1Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
         try { write(p2Path, p2Json); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
         try { write(pmPath, metaJson); } catch (Exception e) { log.debug("JSON write skip: {}", e.getMessage()); }
@@ -753,6 +661,9 @@ public class LeetCodeAdminService {
         return result;
     }
 
+    /**
+     * Helper — remove object with matching id from ArrayNode
+     */
     private void removeFromArray(ArrayNode arr, int id) {
         for (int i = 0; i < arr.size(); i++) {
             if (arr.get(i).path("id").asInt(-1) == id) {
