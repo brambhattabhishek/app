@@ -94,12 +94,35 @@ public class AuthController {
     void initOtpIndexes() {
         try {
             MongoCollection<Document> otps = mongo.getCollection("otp_codes");
-            // TTL: created_at se 15 min baad auto-delete
-            otps.createIndex(new Document("created_at", 1),
-                    new IndexOptions().expireAfter(15L, TimeUnit.MINUTES).name("ttl_created_at"));
-            // phone + used queries ke liye
+
+            // Check if TTL index already exists (by name)
+            boolean ttlExists = false;
+            for (Document idx : otps.listIndexes()) {
+                String name = idx.getString("name");
+                if ("ttl_created_at".equals(name)) {
+                    ttlExists = true;
+                    break;
+                }
+            }
+
+            if (!ttlExists) {
+                // Purana conflicting index ho toh drop karein
+                try {
+                    otps.dropIndex("created_at_1");
+                    System.out.println("Dropped old created_at_1 index");
+                } catch (Exception e) {
+                    // Index nahi tha — fine
+                }
+
+                otps.createIndex(new Document("created_at", 1),
+                        new IndexOptions().expireAfter(15L, TimeUnit.MINUTES).name("ttl_created_at"));
+                System.out.println("Created TTL index ttl_created_at");
+            }
+
+            // Query index (idempotent — conflict nahi hoga)
             otps.createIndex(new Document("phone", 1).append("used", 1).append("created_at", -1),
                     new IndexOptions().name("phone_used_created"));
+
         } catch (Exception e) {
             System.err.println("Could not create OTP indexes: " + e.getMessage());
         }
