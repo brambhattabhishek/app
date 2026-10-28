@@ -3,6 +3,8 @@ package com.codelab;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.IndexOptions;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -22,6 +24,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static com.codelab.AuthService.publicUser;
 import static com.mongodb.client.model.Filters.*;
@@ -33,11 +36,17 @@ public class AuthController {
     @Autowired AuthService auth;
     @Autowired Notifier notifier;
     @Autowired JwtService jwtService;
-    private final BCryptPasswordEncoder enc = new BCryptPasswordEncoder();
+
+    // Password hashing (login/register ke liye)
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    // OTP hashing (alag instance — confusion se bachne ke liye)
+    private final BCryptPasswordEncoder otpEncoder = new BCryptPasswordEncoder(10);
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final ObjectMapper om = new ObjectMapper();
     private final SecureRandom rnd = new SecureRandom();
     static final String PHONE_RE = "^\\+[1-9]\\d{7,14}$";
+    static final String TEXTBEE_URL = "https://api.textbee.dev/api/v1/gateway/send-sms";
 
     record RegisterReq(String name, String email, String password) {}
     record LoginReq(String email, String password) {}
@@ -51,7 +60,6 @@ public class AuthController {
 
     static String newId() { return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12); }
 
-    // ★ Every new user gets an explicit role. Default = "USER".
     static Document newUser(String name, String provider) {
         return new Document("user_id", newId())
                 .append("name", name)
@@ -66,9 +74,35 @@ public class AuthController {
         return r == null ? "USER" : r.toUpperCase();
     }
 
+    /** ADMIN_EMAILS comma-separated support karta hai. */
     static boolean isBootstrapAdminEmail(String email) {
-        String adminEmail = Notifier.env("ADMIN_EMAIL");
-        return adminEmail != null && email != null && adminEmail.trim().equalsIgnoreCase(email.trim());
+        String adminEmails = Notifier.env("ADMIN_EMAILS");
+        if (adminEmails == null || email == null) return false;
+        String target = email.trim().toLowerCase();
+        for (String e : adminEmails.split(",")) {
+            if (e.trim().equalsIgnoreCase(target)) return true;
+        }
+        return false;
+    }
+
+    static boolean textbeeReady() {
+        return Notifier.env("TEXTBEE_API_KEY") != null;
+    }
+
+    /** OTP codes ke liye TTL index (auto-delete 15 min ke baad) + query indexes. */
+    @PostConstruct
+    void initOtpIndexes() {
+        try {
+            MongoCollection<Document> otps = mongo.getCollection("otp_codes");
+            // TTL: created_at se 15 min baad auto-delete
+            otps.createIndex(new Document("created_at", 1),
+                    new IndexOptions().expireAfter(15L, TimeUnit.MINUTES).name("ttl_created_at"));
+            // phone + used queries ke liye
+            otps.createIndex(new Document("phone", 1).append("used", 1).append("created_at", -1),
+                    new IndexOptions().name("phone_used_created"));
+        } catch (Exception e) {
+            System.err.println("Could not create OTP indexes: " + e.getMessage());
+        }
     }
 
     @GetMapping("/providers")
@@ -78,7 +112,7 @@ public class AuthController {
         m.put("google", true);
         m.put("github", Notifier.env("GITHUB_CLIENT_ID") != null && Notifier.env("GITHUB_CLIENT_SECRET") != null);
         m.put("linkedin", Notifier.env("LINKEDIN_CLIENT_ID") != null && Notifier.env("LINKEDIN_CLIENT_SECRET") != null);
-        m.put("otp", Notifier.verifyReady() ? "live" : "demo");
+        m.put("otp", textbeeReady() ? "live" : "unavailable");
         return m;
     }
 
@@ -90,7 +124,7 @@ public class AuthController {
         if (users().find(eq("email", email)).first() != null) throw err(HttpStatus.CONFLICT, "Email already registered");
 
         String name = r.name() == null || r.name().isBlank() ? email.split("@")[0] : r.name().trim();
-        Document u = newUser(name, "email").append("email", email).append("password_hash", enc.encode(r.password()));
+        Document u = newUser(name, "email").append("email", email).append("password_hash", passwordEncoder.encode(r.password()));
 
         if (isBootstrapAdminEmail(email)) u.put("role", "ADMIN");
 
@@ -98,69 +132,37 @@ public class AuthController {
         return loginInternal(u, true, "email", req);
     }
 
-    // ★ CRITICAL FIX: Missing @PostMapping("/login") endpoint
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody LoginReq r, HttpServletRequest req) {
         String email = r.email() == null ? "" : r.email().trim().toLowerCase();
-
-        // ★ DEBUG LOGS
-        System.out.println("═══ LOGIN ATTEMPT ═══");
-        System.out.println("  email: [" + email + "]");
-        System.out.println("  password length: " + (r.password() != null ? r.password().length() : "NULL"));
-        System.out.println("  IP: " + AuthService.ip(req));
 
         String ident = AuthService.ip(req) + ":" + email;
         var attempts = mongo.getCollection("login_attempts");
         Document a = attempts.find(eq("identifier", ident)).first();
         if (a != null && a.getInteger("count", 0) >= 5 && System.currentTimeMillis() - a.getDate("last").getTime() < 15 * 60_000L) {
-            System.out.println("  ✗ BLOCKED: too many attempts (count=" + a.getInteger("count", 0) + ")");
             throw err(HttpStatus.TOO_MANY_REQUESTS, "Too many failed attempts. Try again in 15 minutes.");
         }
 
         Document u = users().find(eq("email", email)).first();
-        System.out.println("  user found: " + (u != null));
-        if (u != null) {
-            System.out.println("  user_id: " + u.getString("user_id"));
-            System.out.println("  has password_hash: " + (u.getString("password_hash") != null));
-            System.out.println("  role: " + u.getString("role"));
-        }
 
-        if (u == null || u.getString("password_hash") == null || r.password() == null || !enc.matches(r.password(), u.getString("password_hash"))) {
-            System.out.println("  ✗ LOGIN FAILED: invalid credentials");
-            if (u != null && u.getString("password_hash") == null) {
-                System.out.println("  → User exists but has NO password (social/phone login)");
-            } else if (u != null) {
-                System.out.println("  → Password mismatch");
-            } else {
-                System.out.println("  → User does not exist");
-            }
+        if (u == null || u.getString("password_hash") == null || r.password() == null || !passwordEncoder.matches(r.password(), u.getString("password_hash"))) {
             attempts.updateOne(eq("identifier", ident), new Document("$inc", new Document("count", 1)).append("$set", new Document("last", new Date())),
                     new com.mongodb.client.model.UpdateOptions().upsert(true));
             throw err(HttpStatus.UNAUTHORIZED, u != null && u.getString("password_hash") == null
                     ? "This account uses social / phone login. Use that method instead." : "Invalid email or password");
         }
 
-        System.out.println("  ✓ PASSWORD MATCHED");
         attempts.deleteOne(eq("identifier", ident));
 
         if (u.getString("role") == null) {
             String role = isBootstrapAdminEmail(email) ? "ADMIN" : "USER";
             users().updateOne(eq("user_id", u.getString("user_id")), new Document("$set", new Document("role", role)));
             u.put("role", role);
-            System.out.println("  → Backfilled role: " + role);
         }
 
-        try {
-            Map<String, Object> result = loginInternal(u, false, "email", req);
-            System.out.println("  ✓ LOGIN SUCCESS: token generated, user=" + ((Document)result.get("user")).getString("user_id"));
-            return result;
-        } catch (Exception e) {
-            System.out.println("  ✗ LOGIN EXCEPTION in loginInternal: " + e.getMessage());
-            e.printStackTrace();
-            throw e;
-        }
+        return loginInternal(u, false, "email", req);
     }
-    // ★ Internal method (renamed from login → loginInternal)
+
     private Map<String, Object> loginInternal(Document u, boolean isNew, String method, HttpServletRequest req) {
         Date prevActive = u.getDate("last_active_at");
         Date now = new Date();
@@ -175,7 +177,6 @@ public class AuthController {
         mongo.getCollection("events").insertOne(new Document("type", "login").append("user_id", u.getString("user_id")).append("method", method)
                 .append("new_user", isNew).append("greeting", greeting).append("ip", AuthService.ip(req)).append("ua", ua).append("created_at", now));
 
-        // ★ NPE-safe
         Document fresh = mongo.getCollection("users").find(eq("user_id", u.getString("user_id"))).first();
         if (fresh == null) {
             if (u.getString("email") != null) {
@@ -277,7 +278,7 @@ public class AuthController {
         return c;
     }
 
-    static String enc(String s) { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
+    static String urlEnc(String s) { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
 
     @GetMapping("/oauth/{provider}/start")
     public Map<String, Object> oauthStart(@PathVariable String provider, @RequestParam String redirect_uri) {
@@ -287,8 +288,8 @@ public class AuthController {
         String state = UUID.randomUUID().toString().replace("-", "");
         mongo.getCollection("oauth_states").insertOne(new Document("state", state).append("provider", provider)
                 .append("redirect_uri", redirect_uri).append("created_at", new Date()));
-        String url = c[2] + "?response_type=code&client_id=" + enc(Notifier.env(c[0])) + "&redirect_uri=" + enc(redirect_uri)
-                + "&scope=" + enc(c[3]) + "&state=" + state;
+        String url = c[2] + "?response_type=code&client_id=" + urlEnc(Notifier.env(c[0])) + "&redirect_uri=" + urlEnc(redirect_uri)
+                + "&scope=" + urlEnc(c[3]) + "&state=" + state;
         return Map.of("url", url);
     }
 
@@ -310,8 +311,14 @@ public class AuthController {
         if (provider.equals("github")) {
             JsonNode me = getJson("https://api.github.com/user", access);
             String email = null;
-            for (JsonNode e : getJson("https://api.github.com/user/emails", access))
-                if (e.path("primary").asBoolean() && e.path("verified").asBoolean()) email = e.path("email").asText().toLowerCase();
+            JsonNode emails = getJson("https://api.github.com/user/emails", access);
+            if (emails.isArray()) {
+                for (JsonNode e : emails)
+                    if (e.path("primary").asBoolean() && e.path("verified").asBoolean()) {
+                        email = e.path("email").asText().toLowerCase();
+                        break;
+                    }
+            }
             String name = me.path("name").asText(null);
             return upsertSocial("github_id", me.path("id").asText(), email, name == null ? me.path("login").asText() : name,
                     me.path("avatar_url").asText(null), "github", new Document("github_login", me.path("login").asText()), req);
@@ -329,51 +336,119 @@ public class AuthController {
         return om.readTree(r.body());
     }
 
-    @PostMapping("/otp/send")
-    public Map<String, Object> otpSend(@RequestBody OtpReq r) throws Exception {
-        String phone = r.phone() == null ? "" : r.phone().replaceAll("[\\s-]", "");
-        if (!phone.matches(PHONE_RE)) throw err(HttpStatus.BAD_REQUEST, "Enter phone with country code, e.g. +919876543210");
-        var otps = mongo.getCollection("otp_codes");
-        if (otps.countDocuments(and(eq("phone", phone), gte("created_at", new Date(System.currentTimeMillis() - 15 * 60_000L)))) >= 5)
-            throw err(HttpStatus.TOO_MANY_REQUESTS, "Too many OTP requests. Try again later.");
-        Map<String, Object> out = new LinkedHashMap<>();
-        if (Notifier.verifyReady()) {
-            HttpResponse<String> res = notifier.twilioPost("https://verify.twilio.com/v2/Services/" + Notifier.env("TWILIO_VERIFY_SERVICE_SID") + "/Verifications",
-                    Map.of("To", phone, "Channel", "sms"));
-            if (res.statusCode() >= 300) throw err(HttpStatus.BAD_GATEWAY, "Could not send OTP. Check the number and try again.");
-            otps.insertOne(new Document("phone", phone).append("mode", "twilio").append("created_at", new Date()));
-            out.put("demo", false);
-        } else {
-            String code = String.format("%06d", rnd.nextInt(1_000_000));
-            otps.insertOne(new Document("phone", phone).append("mode", "demo").append("hash", enc.encode(code)).append("attempts", 0)
-                    .append("used", false).append("created_at", new Date()));
-            out.put("demo", true);
-            out.put("demo_code", code);
+    // ═══════════════════════════════════════════════════════════════
+    //  OTP FLOW — Textbee se SMS, logic poora backend mein
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Textbee se SMS bhejta hai. Success par true. */
+    boolean sendSmsViaTextbee(String phone, String message) {
+        String apiKey = Notifier.env("TEXTBEE_API_KEY");
+        if (apiKey == null) {
+            System.err.println("Textbee: API key missing");
+            return false;
         }
+        try {
+            String json = om.writeValueAsString(Map.of(
+                    "recipients", List.of(phone),
+                    "message", message
+            ));
+            HttpRequest req = HttpRequest.newBuilder(URI.create(TEXTBEE_URL))
+                    .header("x-api-key", apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() >= 300) {
+                System.err.println("Textbee error " + res.statusCode() + ": " + res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            System.err.println("Textbee exception: " + e.getMessage());
+            return false;
+        }
+    }
+
+    @PostMapping("/otp/send")
+    public Map<String, Object> otpSend(@RequestBody OtpReq r) {
+        String phone = r.phone() == null ? "" : r.phone().replaceAll("[\\s-]", "");
+        if (!phone.matches(PHONE_RE))
+            throw err(HttpStatus.BAD_REQUEST, "Enter phone with country code, e.g. +919876543210");
+
+        if (!textbeeReady())
+            throw err(HttpStatus.SERVICE_UNAVAILABLE, "SMS/OTP service is not configured");
+
+        var otps = mongo.getCollection("otp_codes");
+
+        // rate limit: max 5 requests per 15 min per phone
+        long recent = otps.countDocuments(and(eq("phone", phone),
+                gte("created_at", new Date(System.currentTimeMillis() - 15 * 60_000L))));
+        if (recent >= 5)
+            throw err(HttpStatus.TOO_MANY_REQUESTS, "Too many OTP requests. Try again in 15 minutes.");
+
+        // 6-digit code
+        String code = String.format("%06d", rnd.nextInt(1_000_000));
+
+        // 1) Pehle DB mein save karein (BCrypt hash) — fail ho toh SMS na jaye
+        var otpDoc = new Document("phone", phone)
+                .append("hash", otpEncoder.encode(code))
+                .append("attempts", 0)
+                .append("used", false)
+                .append("created_at", new Date());
+        otps.insertOne(otpDoc);
+        Object otpId = otpDoc.get("_id");
+
+        // 2) Phir SMS bhejein
+        String brand = Notifier.env("EMAIL_FROM_NAME");
+        if (brand == null) brand = "CodeLab";
+        String msg = "Your " + brand + " verification code is " + code + ". Valid for 10 minutes. Do not share.";
+        boolean sent = sendSmsViaTextbee(phone, msg);
+
+        // 3) SMS fail ho toh OTP delete kar dein (user ko code nahi mila)
+        if (!sent) {
+            try {
+                if (otpId != null) {
+                    otps.deleteOne(eq("_id", otpId));
+                } else {
+                    otps.deleteOne(and(
+                            eq("phone", phone),
+                            eq("used", false),
+                            eq("hash", otpDoc.getString("hash"))
+                    ));
+                }
+            } catch (Exception ignored) {}
+            throw err(HttpStatus.BAD_GATEWAY, "Could not send OTP. Check the number and try again.");
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
         out.put("sent", true);
         return out;
     }
 
     @PostMapping("/otp/verify")
-    public Map<String, Object> otpVerify(@RequestBody OtpReq r, HttpServletRequest req) throws Exception {
+    public Map<String, Object> otpVerify(@RequestBody OtpReq r, HttpServletRequest req) {
         String phone = r.phone() == null ? "" : r.phone().replaceAll("[\\s-]", "");
-        if (!phone.matches(PHONE_RE) || r.code() == null || !r.code().matches("\\d{4,8}")) throw err(HttpStatus.BAD_REQUEST, "Invalid phone or code");
-        if (Notifier.verifyReady()) {
-            HttpResponse<String> res = notifier.twilioPost("https://verify.twilio.com/v2/Services/" + Notifier.env("TWILIO_VERIFY_SERVICE_SID") + "/VerificationCheck",
-                    Map.of("To", phone, "Code", r.code()));
-            if (res.statusCode() >= 300 || !"approved".equals(om.readTree(res.body()).path("status").asText()))
-                throw err(HttpStatus.UNAUTHORIZED, "Incorrect or expired OTP");
-        } else {
-            var otps = mongo.getCollection("otp_codes");
-            Document o = otps.find(and(eq("phone", phone), eq("mode", "demo"), eq("used", false),
-                    gte("created_at", new Date(System.currentTimeMillis() - 10 * 60_000L)))).sort(new Document("created_at", -1)).first();
-            if (o == null || o.getInteger("attempts", 0) >= 5) throw err(HttpStatus.UNAUTHORIZED, "OTP expired. Request a new one.");
-            if (!enc.matches(r.code(), o.getString("hash"))) {
-                otps.updateOne(eq("_id", o.getObjectId("_id")), new Document("$inc", new Document("attempts", 1)));
-                throw err(HttpStatus.UNAUTHORIZED, "Incorrect OTP");
-            }
-            otps.updateOne(eq("_id", o.getObjectId("_id")), new Document("$set", new Document("used", true)));
+        if (!phone.matches(PHONE_RE) || r.code() == null || !r.code().matches("\\d{4,8}"))
+            throw err(HttpStatus.BAD_REQUEST, "Invalid phone or code");
+
+        var otps = mongo.getCollection("otp_codes");
+        Document o = otps.find(and(eq("phone", phone), eq("used", false),
+                        gte("created_at", new Date(System.currentTimeMillis() - 10 * 60_000L))))
+                .sort(new Document("created_at", -1)).first();
+
+        if (o == null) throw err(HttpStatus.UNAUTHORIZED, "OTP expired. Request a new one.");
+        if (o.getInteger("attempts", 0) >= 5)
+            throw err(HttpStatus.UNAUTHORIZED, "Too many wrong attempts. Request a new OTP.");
+
+        if (!otpEncoder.matches(r.code(), o.getString("hash"))) {
+            otps.updateOne(eq("_id", o.getObjectId("_id")),
+                    new Document("$inc", new Document("attempts", 1)));
+            throw err(HttpStatus.UNAUTHORIZED, "Incorrect OTP");
         }
+
+        otps.updateOne(eq("_id", o.getObjectId("_id")),
+                new Document("$set", new Document("used", true)));
+
         Document u = users().find(eq("phone", phone)).first();
         boolean isNew = u == null;
         if (isNew) {
