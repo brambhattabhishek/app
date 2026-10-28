@@ -46,7 +46,8 @@ public class AuthController {
     private final ObjectMapper om = new ObjectMapper();
     private final SecureRandom rnd = new SecureRandom();
     static final String PHONE_RE = "^\\+[1-9]\\d{7,14}$";
-    static final String TEXTBEE_URL = "https://api.textbee.dev/api/v1/gateway/send-sms";
+    // SMS Gateway for Android — Cloud Mode base URL
+    static final String SMS_GATEWAY_URL = "https://api.sms-gate.app/3rdparty/v1";
 
     record RegisterReq(String name, String email, String password) {}
     record LoginReq(String email, String password) {}
@@ -85,8 +86,18 @@ public class AuthController {
         return false;
     }
 
-    static boolean textbeeReady() {
-        return Notifier.env("TEXTBEE_API_KEY") != null;
+    /** SMS Gateway credentials configured hain ya nahi. */
+    static boolean smsGatewayReady() {
+        return Notifier.env("SMS_GATEWAY_USERNAME") != null
+                && Notifier.env("SMS_GATEWAY_PASSWORD") != null;
+    }
+
+    /** SMS Gateway Basic Auth header. */
+    static String smsGatewayAuth() {
+        String user = Notifier.env("SMS_GATEWAY_USERNAME");
+        String pass = Notifier.env("SMS_GATEWAY_PASSWORD");
+        return "Basic " + Base64.getEncoder()
+                .encodeToString((user + ":" + pass).getBytes(StandardCharsets.UTF_8));
     }
 
     /** OTP codes ke liye TTL index (auto-delete 15 min ke baad) + query indexes. */
@@ -95,7 +106,6 @@ public class AuthController {
         try {
             MongoCollection<Document> otps = mongo.getCollection("otp_codes");
 
-            // Check if TTL index already exists (by name)
             boolean ttlExists = false;
             for (Document idx : otps.listIndexes()) {
                 String name = idx.getString("name");
@@ -106,20 +116,17 @@ public class AuthController {
             }
 
             if (!ttlExists) {
-                // Purana conflicting index ho toh drop karein
                 try {
                     otps.dropIndex("created_at_1");
                     System.out.println("Dropped old created_at_1 index");
                 } catch (Exception e) {
                     // Index nahi tha — fine
                 }
-
                 otps.createIndex(new Document("created_at", 1),
                         new IndexOptions().expireAfter(15L, TimeUnit.MINUTES).name("ttl_created_at"));
                 System.out.println("Created TTL index ttl_created_at");
             }
 
-            // Query index (idempotent — conflict nahi hoga)
             otps.createIndex(new Document("phone", 1).append("used", 1).append("created_at", -1),
                     new IndexOptions().name("phone_used_created"));
 
@@ -135,7 +142,7 @@ public class AuthController {
         m.put("google", true);
         m.put("github", Notifier.env("GITHUB_CLIENT_ID") != null && Notifier.env("GITHUB_CLIENT_SECRET") != null);
         m.put("linkedin", Notifier.env("LINKEDIN_CLIENT_ID") != null && Notifier.env("LINKEDIN_CLIENT_SECRET") != null);
-        m.put("otp", textbeeReady() ? "live" : "unavailable");
+        m.put("otp", smsGatewayReady() ? "live" : "unavailable");
         return m;
     }
 
@@ -360,34 +367,34 @@ public class AuthController {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  OTP FLOW — Textbee se SMS, logic poora backend mein
+    //  OTP FLOW — SMS Gateway for Android (Cloud Mode)
     // ═══════════════════════════════════════════════════════════════
 
-    /** Textbee se SMS bhejta hai. Success par true. */
-    boolean sendSmsViaTextbee(String phone, String message) {
-        String apiKey = Notifier.env("TEXTBEE_API_KEY");
-        if (apiKey == null) {
-            System.err.println("Textbee: API key missing");
+    /** SMS Gateway se SMS bhejta hai. Success par true. */
+    boolean sendSmsViaGateway(String phone, String message) {
+        if (!smsGatewayReady()) {
+            System.err.println("SMS Gateway: credentials missing");
             return false;
         }
         try {
+            // SMS Gateway API: {message, phoneNumbers}
             String json = om.writeValueAsString(Map.of(
-                    "recipients", List.of(phone),
-                    "message", message
+                    "message", message,
+                    "phoneNumbers", List.of(phone)
             ));
-            HttpRequest req = HttpRequest.newBuilder(URI.create(TEXTBEE_URL))
-                    .header("x-api-key", apiKey)
+            HttpRequest req = HttpRequest.newBuilder(URI.create(SMS_GATEWAY_URL + "/message"))
+                    .header("Authorization", smsGatewayAuth())
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() >= 300) {
-                System.err.println("Textbee error " + res.statusCode() + ": " + res.body());
+                System.err.println("SMS Gateway error " + res.statusCode() + ": " + res.body());
                 return false;
             }
             return true;
         } catch (Exception e) {
-            System.err.println("Textbee exception: " + e.getMessage());
+            System.err.println("SMS Gateway exception: " + e.getMessage());
             return false;
         }
     }
@@ -398,21 +405,18 @@ public class AuthController {
         if (!phone.matches(PHONE_RE))
             throw err(HttpStatus.BAD_REQUEST, "Enter phone with country code, e.g. +919876543210");
 
-        if (!textbeeReady())
+        if (!smsGatewayReady())
             throw err(HttpStatus.SERVICE_UNAVAILABLE, "SMS/OTP service is not configured");
 
         var otps = mongo.getCollection("otp_codes");
 
-        // rate limit: max 5 requests per 15 min per phone
         long recent = otps.countDocuments(and(eq("phone", phone),
                 gte("created_at", new Date(System.currentTimeMillis() - 15 * 60_000L))));
         if (recent >= 5)
             throw err(HttpStatus.TOO_MANY_REQUESTS, "Too many OTP requests. Try again in 15 minutes.");
 
-        // 6-digit code
         String code = String.format("%06d", rnd.nextInt(1_000_000));
 
-        // 1) Pehle DB mein save karein (BCrypt hash) — fail ho toh SMS na jaye
         var otpDoc = new Document("phone", phone)
                 .append("hash", otpEncoder.encode(code))
                 .append("attempts", 0)
@@ -421,13 +425,11 @@ public class AuthController {
         otps.insertOne(otpDoc);
         Object otpId = otpDoc.get("_id");
 
-        // 2) Phir SMS bhejein
         String brand = Notifier.env("EMAIL_FROM_NAME");
         if (brand == null) brand = "CodeLab";
         String msg = "Your " + brand + " verification code is " + code + ". Valid for 10 minutes. Do not share.";
-        boolean sent = sendSmsViaTextbee(phone, msg);
+        boolean sent = sendSmsViaGateway(phone, msg);
 
-        // 3) SMS fail ho toh OTP delete kar dein (user ko code nahi mila)
         if (!sent) {
             try {
                 if (otpId != null) {

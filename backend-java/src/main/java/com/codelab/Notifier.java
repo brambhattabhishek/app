@@ -22,7 +22,8 @@ public class Notifier {
 
     static final long WELCOME_BACK_DAYS = 7;
     static final String MAILJET_URL = "https://api.mailjet.com/v3.1/send";
-    static final String TEXTBEE_URL = "https://api.textbee.dev/api/v1/gateway/send-sms";
+    // SMS Gateway for Android (Cloud Mode) base URL
+    static final String SMS_GATEWAY_URL = "https://api.sms-gate.app/3rdparty/v1";
 
     final HttpClient http = HttpClient.newHttpClient();
     final ObjectMapper om = new ObjectMapper();
@@ -45,8 +46,9 @@ public class Notifier {
                 && env("EMAIL_FROM_ADDRESS") != null;
     }
 
-    static boolean textbeeReady() {
-        return env("TEXTBEE_API_KEY") != null;
+    /** SMS Gateway credentials check. */
+    static boolean smsGatewayReady() {
+        return env("SMS_GATEWAY_USERNAME") != null && env("SMS_GATEWAY_PASSWORD") != null;
     }
 
     static String mailjetAuth() {
@@ -54,6 +56,14 @@ public class Notifier {
         String priv = env("MJ_APIKEY_PRIVATE");
         return "Basic " + Base64.getEncoder()
                 .encodeToString((pub + ":" + priv).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** SMS Gateway Basic Auth (username:password). */
+    static String smsGatewayAuth() {
+        String user = env("SMS_GATEWAY_USERNAME");
+        String pass = env("SMS_GATEWAY_PASSWORD");
+        return "Basic " + Base64.getEncoder()
+                .encodeToString((user + ":" + pass).getBytes(StandardCharsets.UTF_8));
     }
 
     void log(Document u, String channel, String kind, String to, String status, String error) {
@@ -67,12 +77,24 @@ public class Notifier {
                         .append("created_at", new Date()));
     }
 
-    /** Welcome (new user) ya welcome-back (>= 7 din inactive). Consistently active ko kuch nahi. */
+    /**
+     * Har login/register par email aur SMS jayega.
+     * - Naya user → "welcome"
+     * - 7+ din inactive → "welcome_back"
+     * - Normal active user → "login_alert" (naya)
+     */
     public String greet(Document u, boolean isNew, Date prevActive) {
         long gap = prevActive == null ? Long.MAX_VALUE
                 : (System.currentTimeMillis() - prevActive.getTime()) / 86_400_000L;
-        String kind = isNew ? "welcome" : gap >= WELCOME_BACK_DAYS ? "welcome_back" : null;
-        if (kind == null) return null;
+
+        String kind;
+        if (isNew) {
+            kind = "welcome";
+        } else if (gap >= WELCOME_BACK_DAYS) {
+            kind = "welcome_back";
+        } else {
+            kind = "login_alert";   // ← har normal login par bhi email/SMS
+        }
 
         CompletableFuture.runAsync(() -> {
             if (u.getString("email") != null) sendEmail(u, kind);
@@ -89,11 +111,24 @@ public class Notifier {
         String brand = env("EMAIL_FROM_NAME");
         String app = env("APP_URL");
         String name = HtmlUtils.htmlEscape(Optional.ofNullable(u.getString("name")).orElse("there"));
+
         boolean back = kind.equals("welcome_back");
-        String subject = back ? "Welcome back to " + brand + "!" : "Welcome to " + brand + "!";
-        String line = back
-                ? "It's been a while — your problems and streak are waiting. Pick up right where you left off."
-                : "Your account is ready. Solve problems in Python, Java, C++ or JavaScript, and track your progress on your profile.";
+        boolean alert = kind.equals("login_alert");
+
+        String subject;
+        String line;
+        if (alert) {
+            subject = "New login to your " + brand + " account";
+            line = "Aapke account mein abhi login hua hai. Agar yeh aap the, toh koi action ki zaroorat nahi. "
+                    + "Agar aapne login nahi kiya, toh turant apna password change karein.";
+        } else if (back) {
+            subject = "Welcome back to " + brand + "!";
+            line = "It's been a while — your problems and streak are waiting. Pick up right where you left off.";
+        } else {
+            subject = "Welcome to " + brand + "!";
+            line = "Your account is ready. Solve problems in Python, Java, C++ or JavaScript, and track your progress on your profile.";
+        }
+
         String html = "<table role=\"presentation\" width=\"100%\" style=\"background:#0A0A0C\"><tr><td style=\"padding:32px;font-family:Arial,sans-serif;color:#F3F4F6\">"
                 + "<h2 style=\"margin:0 0 12px;color:#FFA116\">" + HtmlUtils.htmlEscape(subject) + "</h2>"
                 + "<p>Hi " + name + ",</p><p>" + line + "</p>"
@@ -144,26 +179,33 @@ public class Notifier {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  SMS — Textbee (docs: POST /gateway/send-sms, x-api-key, {recipients, message})
+    //  SMS — SMS Gateway for Android (Cloud Mode)
+    //  Docs: POST /message, Basic Auth, {message, phoneNumbers}
     // ═══════════════════════════════════════════════════════════════
 
     void sendSms(Document u, String kind) {
         String brand = env("EMAIL_FROM_NAME");
         String phone = u.getString("phone");
         if (phone == null) { log(u, "sms", kind, null, "skipped", "no phone on user"); return; }
-        if (!textbeeReady()) { log(u, "sms", kind, phone, "skipped", "Textbee not configured"); return; }
+        if (!smsGatewayReady()) { log(u, "sms", kind, phone, "skipped", "SMS Gateway not configured"); return; }
 
-        String body = kind.equals("welcome_back")
-                ? "Welcome back to " + brand + "! Your next problem is waiting."
-                : "Welcome to " + brand + "! Happy coding.";
+        String body;
+        if (kind.equals("login_alert")) {
+            body = brand + ": New login to your account. If this wasn't you, change your password.";
+        } else if (kind.equals("welcome_back")) {
+            body = "Welcome back to " + brand + "! Your next problem is waiting.";
+        } else {
+            body = "Welcome to " + brand + "! Happy coding.";
+        }
 
         try {
+            // SMS Gateway for Android API format: {message, phoneNumbers}
             Map<String, Object> payload = Map.of(
-                    "recipients", List.of(phone),
-                    "message", body
+                    "message", body,
+                    "phoneNumbers", List.of(phone)
             );
-            HttpRequest req = HttpRequest.newBuilder(URI.create(TEXTBEE_URL))
-                    .header("x-api-key", env("TEXTBEE_API_KEY"))
+            HttpRequest req = HttpRequest.newBuilder(URI.create(SMS_GATEWAY_URL + "/message"))
+                    .header("Authorization", smsGatewayAuth())
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(om.writeValueAsString(payload)))
                     .build();
