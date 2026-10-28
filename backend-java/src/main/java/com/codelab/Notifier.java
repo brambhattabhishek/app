@@ -81,7 +81,7 @@ public class Notifier {
      * Har login/register par email aur SMS jayega.
      * - Naya user → "welcome"
      * - 7+ din inactive → "welcome_back"
-     * - Normal active user → "login_alert" (naya)
+     * - Normal active user → "login_alert"
      */
     public String greet(Document u, boolean isNew, Date prevActive) {
         long gap = prevActive == null ? Long.MAX_VALUE
@@ -93,7 +93,7 @@ public class Notifier {
         } else if (gap >= WELCOME_BACK_DAYS) {
             kind = "welcome_back";
         } else {
-            kind = "login_alert";   // ← har normal login par bhi email/SMS
+            kind = "login_alert";
         }
 
         CompletableFuture.runAsync(() -> {
@@ -104,7 +104,7 @@ public class Notifier {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  EMAIL — Mailjet v3.1
+    //  EMAIL — Mailjet v3.1 (English content, professional template)
     // ═══════════════════════════════════════════════════════════════
 
     void sendEmail(Document u, String kind) {
@@ -116,38 +116,118 @@ public class Notifier {
         boolean alert = kind.equals("login_alert");
 
         String subject;
+        String heading;
         String line;
+        String cta;
+        String preheader;
+
         if (alert) {
-            subject = "New login to your " + brand + " account";
-            line = "Aapke account mein abhi login hua hai. Agar yeh aap the, toh koi action ki zaroorat nahi. "
-                    + "Agar aapne login nahi kiya, toh turant apna password change karein.";
+            subject = "New sign-in to your " + brand + " account";
+            heading = "New sign-in detected";
+            preheader = "A new sign-in was detected on your " + brand + " account.";
+            line = "We noticed a new sign-in to your " + brand + " account. If this was you, no action is needed. "
+                    + "If you don't recognize this activity, please reset your password immediately.";
+            cta = "Review account";
         } else if (back) {
-            subject = "Welcome back to " + brand + "!";
-            line = "It's been a while — your problems and streak are waiting. Pick up right where you left off.";
+            subject = "Welcome back to " + brand;
+            heading = "Welcome back!";
+            preheader = "Your problems and streak are waiting for you.";
+            line = "It's been a while. Your problems and streak are waiting — pick up right where you left off.";
+            cta = "Continue solving";
         } else {
-            subject = "Welcome to " + brand + "!";
+            subject = "Welcome to " + brand;
+            heading = "Welcome aboard!";
+            preheader = "Your " + brand + " account is ready.";
             line = "Your account is ready. Solve problems in Python, Java, C++ or JavaScript, and track your progress on your profile.";
+            cta = "Start solving";
         }
 
-        String html = "<table role=\"presentation\" width=\"100%\" style=\"background:#0A0A0C\"><tr><td style=\"padding:32px;font-family:Arial,sans-serif;color:#F3F4F6\">"
-                + "<h2 style=\"margin:0 0 12px;color:#FFA116\">" + HtmlUtils.htmlEscape(subject) + "</h2>"
-                + "<p>Hi " + name + ",</p><p>" + line + "</p>"
-                + "<p><a href=\"" + app + "/\" style=\"display:inline-block;background:#FFA116;color:#0A0A0C;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold\">Open " + HtmlUtils.htmlEscape(brand) + "</a></p>"
-                + "<p style=\"font-size:12px;color:#888\">Sent by " + HtmlUtils.htmlEscape(brand) + ". We never ask for your password or codes by email.</p></td></tr></table>";
+        String safeBrand = HtmlUtils.htmlEscape(brand);
+        String safePreheader = HtmlUtils.htmlEscape(preheader);
+
+        String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"
+                + "<body style=\"margin:0;padding:0;background:#0A0A0C;\">"
+
+                // Hidden preheader (inbox preview mein dikhta hai)
+                + "<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;\">" + safePreheader + "</div>"
+
+                + "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#0A0A0C;padding:40px 16px;\">"
+                + "<tr><td align=\"center\">"
+                + "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:560px;background:#111114;border-radius:12px;overflow:hidden;\">"
+
+                // Header / brand
+                + "<tr><td style=\"padding:32px 32px 0 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<span style=\"font-size:20px;font-weight:bold;color:#FFA116;letter-spacing:0.5px;\">" + safeBrand + "</span>"
+                + "</td></tr>"
+
+                // Heading + body
+                + "<tr><td style=\"padding:24px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<h1 style=\"margin:0 0 12px 0;font-size:22px;line-height:1.3;font-weight:bold;color:#F3F4F6;\">"
+                + HtmlUtils.htmlEscape(heading) + "</h1>"
+                + "<p style=\"margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#C9CBD1;\">Hi " + name + ",</p>"
+                + "<p style=\"margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#C9CBD1;\">"
+                + HtmlUtils.htmlEscape(line) + "</p>"
+                + "</td></tr>"
+
+                // CTA
+                + "<tr><td style=\"padding:0 32px 28px 32px;\">"
+                + "<a href=\"" + app + "/\" style=\"display:inline-block;background:#FFA116;color:#0A0A0C;padding:12px 24px;border-radius:8px;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;\">"
+                + HtmlUtils.htmlEscape(cta) + "</a>"
+                + "</td></tr>"
+
+                // Divider
+                + "<tr><td style=\"padding:0 32px;\"><div style=\"border-top:1px solid #1F2024;\"></div></td></tr>"
+
+                // Footer
+                + "<tr><td style=\"padding:20px 32px 32px 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<p style=\"margin:0 0 8px 0;font-size:12px;line-height:1.5;color:#6B6D75;\">"
+                + "This email was sent by " + safeBrand + " because a sign-in was detected on your account.</p>"
+                + "<p style=\"margin:0;font-size:12px;line-height:1.5;color:#6B6D75;\">"
+                + "We never ask for your password or verification codes by email. If you didn't request this, you can safely ignore it.</p>"
+                + "</td></tr>"
+
+                + "</table></td></tr></table></body></html>";
+
         sendRaw(u, kind, subject, html);
     }
 
     public void dailyReminder(Document u, String title, String slug, int streak) {
         String brand = env("EMAIL_FROM_NAME"), app = env("APP_URL");
+        String name = HtmlUtils.htmlEscape(Optional.ofNullable(u.getString("name")).orElse("there"));
+        String safeTitle = HtmlUtils.htmlEscape(title);
         String subject = "Your " + brand + " daily challenge: " + title;
         String streakLine = streak > 0
                 ? "Keep your " + streak + "-day streak alive — solve it before midnight (UTC)."
                 : "Solve it today to start a new streak.";
-        String html = "<table role=\"presentation\" width=\"100%\" style=\"background:#0A0A0C\"><tr><td style=\"padding:32px;font-family:Arial,sans-serif;color:#F3F4F6\">"
-                + "<h2 style=\"margin:0 0 12px;color:#FFA116\">Today's challenge: " + HtmlUtils.htmlEscape(title) + "</h2>"
-                + "<p>Hi " + HtmlUtils.htmlEscape(Optional.ofNullable(u.getString("name")).orElse("there")) + ",</p><p>" + streakLine + "</p>"
-                + "<p><a href=\"" + app + "/problems/" + slug + "\" style=\"display:inline-block;background:#FFA116;color:#0A0A0C;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold\">Solve now</a></p>"
-                + "<p style=\"font-size:12px;color:#888\">You get this because you turned on daily reminders in your " + HtmlUtils.htmlEscape(brand) + " profile. Turn them off anytime from your profile.</p></td></tr></table>";
+
+        String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"
+                + "<body style=\"margin:0;padding:0;background:#0A0A0C;\">"
+                + "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#0A0A0C;padding:40px 16px;\">"
+                + "<tr><td align=\"center\">"
+                + "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:560px;background:#111114;border-radius:12px;overflow:hidden;\">"
+                + "<tr><td style=\"padding:32px 32px 0 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<span style=\"font-size:20px;font-weight:bold;color:#FFA116;letter-spacing:0.5px;\">"
+                + HtmlUtils.htmlEscape(brand) + "</span>"
+                + "</td></tr>"
+                + "<tr><td style=\"padding:24px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<h1 style=\"margin:0 0 12px 0;font-size:22px;line-height:1.3;font-weight:bold;color:#F3F4F6;\">"
+                + "Today's challenge: " + safeTitle + "</h1>"
+                + "<p style=\"margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#C9CBD1;\">Hi " + name + ",</p>"
+                + "<p style=\"margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#C9CBD1;\">"
+                + HtmlUtils.htmlEscape(streakLine) + "</p>"
+                + "</td></tr>"
+                + "<tr><td style=\"padding:0 32px 28px 32px;\">"
+                + "<a href=\"" + app + "/problems/" + slug + "\" style=\"display:inline-block;background:#FFA116;color:#0A0A0C;padding:12px 24px;border-radius:8px;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;\">Solve now</a>"
+                + "</td></tr>"
+                + "<tr><td style=\"padding:0 32px;\"><div style=\"border-top:1px solid #1F2024;\"></div></td></tr>"
+                + "<tr><td style=\"padding:20px 32px 32px 32px;font-family:Arial,Helvetica,sans-serif;\">"
+                + "<p style=\"margin:0;font-size:12px;line-height:1.5;color:#6B6D75;\">"
+                + "You get this because you turned on daily reminders in your " + HtmlUtils.htmlEscape(brand) + " profile. "
+                + "Turn them off anytime from your profile.</p>"
+                + "</td></tr>"
+                + "</table></td></tr></table></body></html>";
         sendRaw(u, "daily_reminder", subject, html);
     }
 
@@ -191,15 +271,14 @@ public class Notifier {
 
         String body;
         if (kind.equals("login_alert")) {
-            body = brand + ": New login to your account. If this wasn't you, change your password.";
+            body = brand + ": New sign-in to your account. If this wasn't you, reset your password now.";
         } else if (kind.equals("welcome_back")) {
-            body = "Welcome back to " + brand + "! Your next problem is waiting.";
+            body = "Welcome back to " + brand + "! Your next challenge is waiting.";
         } else {
             body = "Welcome to " + brand + "! Happy coding.";
         }
 
         try {
-            // SMS Gateway for Android API format: {message, phoneNumbers}
             Map<String, Object> payload = Map.of(
                     "message", body,
                     "phoneNumbers", List.of(phone)
